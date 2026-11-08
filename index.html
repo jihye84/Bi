@@ -390,7 +390,7 @@ const studioEnv=(()=>{
   add(0xffffff, 1.5,5, 4, 2,0.2,0.5);  // 작은 반짝 조명
   return pmrem.fromScene(es,0.02).texture;
 })();
-const meltU={uTime:{value:0},uFade:{value:1}};
+const meltU={uTime:{value:0},uFade:{value:1},uSolid:{value:0}};
 const meltMat=new THREE.MeshPhysicalMaterial({color:0xe6e6ec,metalness:1,roughness:0.04,envMap:studioEnv,envMapIntensity:2.0,
   transparent:true,opacity:1,alphaMap:softEdge,side:THREE.DoubleSide,depthWrite:false});
 meltMat.onBeforeCompile=sh=>{
@@ -399,7 +399,7 @@ meltMat.onBeforeCompile=sh=>{
     .replace('#include <common>','#include <common>\nvarying vec3 vMW;')
     .replace('#include <project_vertex>','#include <project_vertex>\nvMW=(modelMatrix*vec4(transformed,1.0)).xyz;');
   sh.fragmentShader=sh.fragmentShader
-    .replace('#include <common>','#include <common>\nvarying vec3 vMW;\nuniform float uTime,uFade;')
+    .replace('#include <common>','#include <common>\nvarying vec3 vMW;\nuniform float uTime,uFade,uSolid;')
     .replace('#include <normal_fragment_maps>',`#include <normal_fragment_maps>
   {
     vec2 p=vMW.xz; float t=uTime;
@@ -415,7 +415,7 @@ meltMat.onBeforeCompile=sh=>{
     .replace('#include <dithering_fragment>',`#include <dithering_fragment>
   {
     float fr=pow(1.0-abs(dot(normalize(vViewPosition),normal)),2.2);
-    gl_FragColor.a*=mix(0.5,0.98,fr)*uFade;
+    gl_FragColor.a*=mix(mix(0.5,0.98,fr),1.0,uSolid)*uFade;
   }`);
 };
 const melt=new THREE.Mesh(new THREE.CircleGeometry(3.3,128),meltMat); melt.rotation.x=-Math.PI/2; melt.renderOrder=2; scene.add(melt);
@@ -807,7 +807,7 @@ function makeCrystal(R,o){
   g.rotateY(R()*1.57);
   world.add(g);
   const rimH=rise*2.2+0.012;
-  return {g,bars,N:kMax,delay:o.delay,dep:o.dep||0,top:o.N*rise*1.12+(o.dep||0)+((sh.sprouts||nMini)?rise*8:0),bot:rise-rimH*1.15};
+  return {g,bars,N:kMax,nMain:o.N,step:sh.step,rise,delay:o.delay,dep:o.dep||0,top:o.N*rise*1.12+(o.dep||0)+((sh.sprouts||nMini)?rise*8:0),bot:rise-rimH*1.15};
 }
 
 function buildFromSeeds(){
@@ -897,21 +897,81 @@ function startMelt(hold=0){
   meltAnim={t:-hold,cap:false}; waitingSeeds=false; setPlay(false);
   $('drawer').classList.remove('open'); $('share').classList.remove('open');
 }
+/* 녹이기: 위에서 보는 은빛 쇳물 표면 아래로 결정이 가라앉음.
+   결정이 표면을 뚫고 지나가는 자리에 쇳물이 표면장력으로 살짝 솟아 둘러싸고(메니스커스),
+   다 잠기면 그 자리가 오므라들며 물결이 퍼짐 */
+const SINK_SEG=72, SINK_P=12;
+const sinkMat=new THREE.MeshPhysicalMaterial({color:0xe6e6ec,metalness:1,roughness:0.04,envMap:studioEnv,envMapIntensity:2.0,side:THREE.DoubleSide});
+let sinkRings=[];
+function makeSinkRing(){
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(SINK_SEG*SINK_P*3),3));
+  const idx=[];
+  for(let a=0;a<SINK_SEG;a++){ const b=(a+1)%SINK_SEG;
+    for(let p=0;p<SINK_P-1;p++){ const i0=a*SINK_P+p,i1=b*SINK_P+p; idx.push(i0,i1,i0+1, i1,i1+1,i0+1); } }
+  g.setIndex(idx);
+  const m=new THREE.Mesh(g,sinkMat); m.frustumCulled=false; scene.add(m); return m;
+}
+function setSinkRing(mesh,cx,cz,yaw,a,lift,width){
+  const pos=mesh.geometry.attributes.position.array, cy=Math.cos(yaw), sy=Math.sin(yaw);
+  for(let i=0;i<SINK_SEG;i++){
+    const th=i/SINK_SEG*Math.PI*2, c=Math.cos(th), s=Math.sin(th);
+    const r=a/Math.pow(Math.pow(Math.abs(c),8)+Math.pow(Math.abs(s),8),1/8);   // 둥근 네모(결정 단면)
+    for(let p=0;p<SINK_P;p++){
+      const t=p/(SINK_P-1), rr=r+width*Math.pow(t,1.4), hh=lift*Math.pow(1-t,2.4);
+      const lx=c*rr, lz=s*rr, k=(i*SINK_P+p)*3;
+      pos[k]=cx+lx*cy-lz*sy; pos[k+1]=hh-0.003; pos[k+2]=cz+lx*sy+lz*cy;
+    }
+  }
+  mesh.geometry.attributes.position.needsUpdate=true; mesh.geometry.computeVertexNormals();
+}
+const sinkV=new THREE.Vector3(), sinkQ=new THREE.Quaternion(), sinkE=new THREE.Euler();
 function meltFrame(){
-  const m=smooth(0,1,meltAnim.t/MELT_DUR);
-  updateGrowth(1-m);                                   // 바깥 계단부터 무너져 들어감
-  oxU.uD.value=MAX_NM*(1-smooth(0,0.55,m)); crystalMat.iridescence=smooth(4,45,oxU.uD.value);
-  pivot.rotation.x=0; pivot.position.y=lerp(0.15,-half*1.3,m); // 쇳물 속으로 가라앉음
+  const p=clamp(meltAnim.t/MELT_DUR);
+  const m=p*p*(3-2*p);
+  if(!meltAnim.rings){ for(const r of sinkRings) scene.remove(r); sinkRings=crystals.map(()=>makeSinkRing()); meltAnim.rings=true; meltAnim.gone=crystals.map(()=>false); }
+  updateGrowth(1-smooth(0.75,1,m));                    // 거의 다 잠긴 뒤에야 녹아 사라짐
+  oxU.uD.value=MAX_NM*(1-smooth(0,0.6,m)); crystalMat.iridescence=smooth(4,45,oxU.uD.value);
+  pivot.rotation.x=0;
+  const yTop=0.15, yEnd=-(half*2+0.35);
+  pivot.position.y=lerp(yTop,yEnd,m);
   pivot.updateMatrixWorld(true);
   oxU.uWorldInv.value.copy(tmpM.copy(world.matrixWorld).invert());
-  meltU.uFade.value=1; melt.visible=true; setLayers(1); skin.visible=false; menisGroup.visible=false;
+  meltU.uFade.value=1; meltU.uSolid.value=1; melt.visible=true; setLayers(1); skin.visible=false; menisGroup.visible=false;
+  // 결정마다: 수면이 지나는 계단 높이 → 그 높이의 단면 크기로 메니스커스
+  crystals.forEach((c,i)=>{
+    const ring=sinkRings[i];
+    c.g.getWorldPosition(sinkV); c.g.getWorldQuaternion(sinkQ); sinkE.setFromQuaternion(sinkQ,'YXZ');
+    const kWater=(0-sinkV.y)/c.rise;                   // 수면이 몇 번째 계단 높이를 지나는지
+    const N=c.nMain;
+    if(kWater<=0.3){ ring.visible=false; return; }
+    if(kWater>N+0.8){
+      if(!meltAnim.gone[i]){ meltAnim.gone[i]=true;
+        const r=new THREE.Mesh(rippleGeo,new THREE.MeshBasicMaterial({color:0xf2f2f8,transparent:true,opacity:0.8,side:THREE.DoubleSide,depthWrite:false}));
+        r.rotation.x=-Math.PI/2; r.position.set(sinkV.x,0.012,sinkV.z); r.scale.setScalar(0.05);
+        r.userData.t0=performance.now(); r.userData.big=c.step*N*3.2; scene.add(r); ripples.push(r);
+      }
+      ring.visible=false; return;
+    }
+    const a=Math.max(c.step*0.8,Math.min(kWater,N)*c.step);
+    const closing=smooth(N-0.6,N+0.8,kWater);           // 다 잠기기 직전: 쇳물이 위로 덮이며 오므라듦
+    const lift=(0.035+0.02*Math.sin(meltAnim.t*14)*(1-closing))*(1-closing*0.4)+closing*0.05;
+    ring.visible=true;
+    setSinkRing(ring,sinkV.x,sinkV.z,sinkE.y,a*(1-0.85*closing),lift,0.16+0.1*closing);
+  });
   seedGroup.visible=false; wireGroup.visible=false; guide.visible=false; $('depth').classList.add('off');
-  controls.target.y+=(0-controls.target.y)*0.06;
+  controls.target.y+=(0-controls.target.y)*0.1;
+  // 위에서 비스듬히 내려다보는 자리로 (표면 위에서 보는 장면)
+  tmp.copy(camera.position).sub(controls.target); uprightSph.setFromVector3(tmp);
+  uprightSph.phi+=(0.78-uprightSph.phi)*0.12; uprightSph.radius+=(Math.max(4.2,half*5)-uprightSph.radius)*0.08;
+  tmp.setFromSpherical(uprightSph); camera.position.copy(controls.target).add(tmp); camera.up.set(0,1,0); camera.lookAt(controls.target);
   $('phase').textContent='녹이기';
   $('reading').innerHTML='녹는점 271.4 °C';
   if(!meltAnim.cap&&meltAnim.t>=0){ meltAnim.cap=true; const c=$('caption'); c.innerHTML='지난 결정을<br>쇳물에 녹여요.'; c.style.opacity=1; }
   autoSpin=false;
   if(meltAnim.t>=MELT_DUR){
+    for(const r of sinkRings) scene.remove(r); sinkRings=[];
+    meltU.uSolid.value=0;
     meltAnim=null; crystalSeed=Math.floor(Math.random()*1e9);
     clearSeeds(); buildFromSeeds();
     T=0.04; waitingSeeds=true; lastPhase=-1; setPlay(true);
@@ -1370,9 +1430,9 @@ renderer.setAnimationLoop(now=>{
     if(T>=1) setPlay(false);
   }
   for(let i=ripples.length-1;i>=0;i--){
-    const r=ripples[i], a=(now-r.userData.t0)/1400;
+    const r=ripples[i], a=(now-r.userData.t0)/(r.userData.big?2200:1400);
     if(a>=1){ scene.remove(r); ripples.splice(i,1); continue; }
-    r.scale.setScalar(0.05+a*0.9); r.material.opacity=0.8*(1-a);
+    r.scale.setScalar(0.05+a*(r.userData.big||0.9)); r.material.opacity=0.8*(1-a);
   }
   for(const s of seeds){ s.m.rotation.y+=dt*1.5;
     const a=(now-s.mn.userData.t0)/1000;
