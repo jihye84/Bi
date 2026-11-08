@@ -206,7 +206,7 @@
     <p>ㅁ: 닫힌 네모 계단 (가장 흔한 호퍼 모양)<br>
     ㄷ: 한 변이 덜 자라 열린 계단<br>
     ㄴ: 두 변만 자란 꺾쇠 계단<br>
-    ㄹ: 테두리가 두 번 꺾인 ㄹ자 계단<br>
+    ㄹ: 위는 ⊐, 아래는 ⊏ 계단이 이어진<br>ㄹ자 계단<br>
     回: 끊긴 자리가 돌며 감기는 네모 나선<br>
     말림: 한 줄 테두리가 처음부터 끝까지<br>안쪽으로 말려 내려가는 계단<br>
     섞기: 큰 결정, 가지, 곁결정이<br>저마다 다른 무늬로 자라요.</p></div>
@@ -719,6 +719,40 @@ function addSpiral(parent,bars,R,{N,step,rise,fill=0,kBase=0}){
   return last;
 }
 
+
+/* ㄹ: 위쪽은 왼쪽이 열린 ⊐ 계단, 아래쪽은 오른쪽이 열린 ⊏ 계단이 가운데 줄을 나눠 가짐.
+   가장 바깥 층이 ㄹ 글자 모양이고, 안으로 들어갈수록 작은 ⊐·⊏가 겹겹이 내려가 처음부터 ㄹ로 자람 */
+function addRieul(parent,bars,R,{N,step,rise,fill=0,kBase=0}){
+  const M=Math.max(2,Math.ceil(N/2));
+  const tr=step*0.5, rimH=rise*2.2+0.012, base=rise-rimH, ax=1.25;
+  const flip=R()<.5?1:-1, S2=M*step;
+  const ring=new THREE.Group(); parent.add(ring);
+  const push=o=>{ const d=new THREE.Object3D(); ring.add(d); o.d=d; bars.push(o); };
+  const rings=[];
+  for(let k=1;k<=M;k++){
+    const s=k*step, h=k*rise*1.15, sx=s*ax;
+    const hw=rimH*(0.92+R()*0.16), hb=lerp(hw,Math.max(hw,h-base),fill);
+    const th=rise*0.55+0.006, tb=lerp(th,Math.max(th,h-rise*0.65-base),fill), w=step-tr*0.6;
+    for(const half of [-1,1]){             // -1 위쪽(⊐), +1 아래쪽(⊏)
+      const cz=half*S2, open=half<0?-1:1;  // 열린 쪽: 위는 왼쪽(-x), 아래는 오른쪽(+x)
+      const closed=-open;
+      // 가로 두 줄 (위·아래)
+      for(const e of [-1,1]){
+        const z=cz+e*s;
+        push({k:k+kBase,j:e<0?0:1,alongX:true,L:2*sx+tr,t:tr,h,hb,cx:0,cz:z,dir:flip*closed,off:0});
+        if(k>1) push({k:k+kBase,j:e<0?0.5:1.5,alongX:true,L:2*sx-step,t:w,h:h-rise*0.65,hb:tb,cx:0,cz:z-e*step*0.5,dir:0,off:0});
+      }
+      // 닫힌 쪽 세로 줄
+      push({k:k+kBase,j:0.8,alongX:false,L:2*s+tr,t:tr,h,hb,cx:flip*closed*sx,cz,dir:half,off:0});
+      if(k>1) push({k:k+kBase,j:1.2,alongX:false,L:Math.max(tr,2*s-step),t:w,h:h-rise*0.65,hb:tb,cx:flip*closed*(sx-step*0.5),cz,dir:0,off:0});
+    }
+    // flip 반영: 가로줄 cx=0이라 그대로, 세로줄은 위에서 반영
+    rings.push({k,s:s*1.6,h,ring});
+  }
+  const last=rings[rings.length-1]; last.rings=rings;
+  return last;
+}
+
 function makeCrystal(R,o){
   const g=new THREE.Group(); const bars=[];
   const sh=shapeOf(coolU);
@@ -726,6 +760,7 @@ function makeCrystal(R,o){
   const mMain=pickPat(R), wide=1;
   const last=mMain==='말림'
     ?addSpiral(g,bars,R,{N:o.N,step:sh.step,rise,fill:sh.fill*0.5})
+    :mMain==='ㄹ'?addRieul(g,bars,R,{N:Math.round(o.N/1.6),step:sh.step*1.6,rise:rise*1.2,fill:0})
     :addRings(g,bars,R,{N:Math.max(4,Math.round(o.N/wide)),step:sh.step*wide,rise,fill:sh.fill,irr:sh.irr,mode:mMain});
   let kMax=o.N;
   // 뼈대 결정: 바깥 모서리에서 작은 결정이 비스듬히 돋아남
@@ -757,6 +792,8 @@ function makeCrystal(R,o){
     if(mm==='말림'){
       addSpiral(mg,bars,R,{N:4+Math.floor(R()*4),step:sh.step*sc,rise:rise*0.8,kBase:kb});
     } else if(mm==='ㄹ'){
+      addRieul(mg,bars,R,{N:5+Math.floor(R()*5),step:sh.step*sc,rise:rise*0.8,kBase:kb});
+    } else if(false){
       const sz=3+Math.floor(R()*3);
       addRings(mg,bars,R,{N:1,step:sh.step*sc*sz,rise:rise*1.6,fill:0,irr:0,kBase:kb,treads:false,mode:mm,trMul:1/sz});
       // 갈고리 안쪽에 낮은 계단 몇 겹
@@ -987,7 +1024,7 @@ function newRound(){
 $('regrow').onclick=()=>{ newRound(); toast('쇳물을 다시 녹였어요.<br>씨앗을 심어 보세요.'); };
 const PAT_TIP={mix:'결정마다 무늬가 제각각 섞여요.',
   'ㅁ':'닫힌 네모 계단이<br>따글따글 많이 돋아요.','ㄷ':'한쪽이 열린 ㄷ자가<br>겹겹이 포개져요.',
-  'ㄹ':'테두리가 두 번 꺾여<br>ㄹ자로 굽이쳐요.','ㄴ':'두 변만 자란 ㄴ자가<br>꺾쇠처럼 겹쳐요.',
+  'ㄹ':'⊐와 ⊏ 계단이 이어져<br>처음부터 ㄹ자로 자라요.','ㄴ':'두 변만 자란 ㄴ자가<br>꺾쇠처럼 겹쳐요.',
   '回':'끊긴 틈이 한 바퀴씩 돌아가며<br>네모 나선으로 감겨요.',
   '말림':'테두리 한 줄이 처음부터<br>안쪽으로 돌돌 말려 내려가요.'};
 document.querySelectorAll('#pats button').forEach(b=>b.onclick=()=>{
