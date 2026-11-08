@@ -478,7 +478,7 @@ let allBars=[], growRate=30, lastG=-1;
 // ㄹ 무늬 정도 (0~1): 네모 나선 · 끊긴 테두리(ㄷ) · 계단 위 곁결정이 얼마나 자주 생기는지
 let meanderU=0.5;
 
-function addRings(parent,bars,R,{N,step,rise,fill,irr,kBase=0,twistMul=1}){
+function addRings(parent,bars,R,{N,step,rise,fill,irr,kBase=0,twistMul=1,treads=true,gapBoost=0}){
   const mU=meanderU;
   const tr=step*0.5, rimH=rise*2.2+0.012, treadH=rise*0.55+0.006;
   const twist=(R()<.5?-1:1)*(0.004+R()*0.008)*(1+irr*1.5)*twistMul;
@@ -495,10 +495,12 @@ function addRings(parent,bars,R,{N,step,rise,fill,irr,kBase=0,twistMul=1}){
     ring.position.set(Math.cos(driftA+k*0.3)*drift*k*0.2,0,Math.sin(driftA+k*0.3)*drift*k*0.2);
     const s=k*step, h=k*rise+(R()-.5)*rise*0.2*(1+2*irr);
     const spin=R()<.5?1:-1;
-    // 2) 끊긴 테두리: 한 변이 끝내 자라지 못해 ㄷ자로 남음. 다음 층은 반대쪽이 끊겨 ㄹ자로 엇갈림
-    let drop=-1;
-    if(k>2&&R()<0.04+0.5*mU) drop=prevDrop>=0?(prevDrop+2)%4:Math.floor(R()*4);
-    prevDrop=drop;
+    // 2) 끊긴 테두리: 한 변이 모서리 앞에서 멈춰 틈이 열린 ㄷ자로 남음.
+    //    다음 층은 틈이 90°씩 돌아가며 열려, 층이 쌓이면 ㄹ·回자처럼 감겨 보임
+    let gapSide=-1;
+    if(k>1&&R()<Math.min(0.95,0.05+0.6*mU+gapBoost)) gapSide=prevDrop>=0?(prevDrop+1)%4:Math.floor(R()*4);
+    prevDrop=gapSide>=0?gapSide:-1;
+    const drop=-1;
     for(let jj=0;jj<4;jj++){
       const j=jj, q=spiral?((sDir>0?jj:3-jj)/4):0;
       const sj=s+q*step, hj=h+q*rise;
@@ -511,9 +513,28 @@ function addRings(parent,bars,R,{N,step,rise,fill,irr,kBase=0,twistMul=1}){
         const L=(alongX?2*sj+tr:Math.max(tr,2*sj-tr))+hook;
         const missing=k>3&&R()<0.03+0.25*irr?0.45+R()*0.45:1;
         const hb=lerp(hw,Math.max(hw,hj-base),fill);
-        push(ring,{k:k+kBase,j,alongX,L:L*missing,t:tr,h:hj,hb,
-          cx:alongX?hook*0.5*spin:side*sj, cz:alongX?side*sj:hook*0.5*spin,
-          dir:spin*(j<2?1:-1), off:(1-missing)*L*0.5*(R()<.5?1:-1)});
+        let Lr=L*missing, off=(1-missing)*L*0.5*(R()<.5?1:-1);
+        if(j===gapSide){ const gl=Math.min(Lr*0.6,step*(1.6+R()*1.8)); Lr-=gl; off=-sDir*gl*0.5; }
+        const ac=hook*0.5*spin;                       // 변 방향 중심
+        const seg=(c0,len,dirS,offS)=>push(ring,{k:k+kBase,j,alongX,L:len,t:tr,h:hj,hb,
+          cx:alongX?c0:side*sj, cz:alongX?side*sj:c0, dir:dirS, off:offS});
+        // 변 가운데가 끊기고, 끊긴 자리에서 안쪽 층으로 꺾여 들어가는 짧은 벽 → ㄷ·ㄹ자 굽이
+        if(k>2&&Lr>step*5&&R()<0.08+0.6*mU){
+          const a0=ac+off-Lr/2, a1=ac+off+Lr/2;
+          const gl=step*(1.2+R()*1.6), u=lerp(a0+Lr*0.22,a1-Lr*0.22,R());
+          const l1=(u-gl/2)-a0, l2=a1-(u+gl/2);
+          if(l1>step) seg(a0+l1/2,l1,-1,0);
+          if(l2>step) seg(u+gl/2+l2/2,l2,1,0);
+          const jogs=R()<0.85?(R()<0.5?1:2):0;
+          for(let q2=0;q2<jogs;q2++){
+            const at=q2===0?u-gl/2+tr/2:u+gl/2-tr/2, jl=step*(1+(R()<0.35?1:0))+tr;
+            const inner=side*(sj-jl/2+tr/2);
+            push(ring,{k:k+kBase,j:j+0.6,alongX:!alongX,L:jl,t:tr,h:hj-rise*0.15,hb:hw*0.95,
+              cx:alongX?at:inner, cz:alongX?inner:at, dir:-side, off:0});
+          }
+        } else {
+          seg(ac,Lr,spin*(j<2?1:-1),off);
+        }
         // 갈고리 끝에서 직각으로 꺾여 나가는 짧은 벽
         if(hook&&missing===1){
           const ls=step*(1+R()*2.2), endA=spin*(L/2-tr/2), out=side*(sj+ls/2-tr/2);
@@ -522,7 +543,7 @@ function addRings(parent,bars,R,{N,step,rise,fill,irr,kBase=0,twistMul=1}){
         }
       }
       // 디딤판: 안쪽 층 테두리와 이 층 테두리 사이
-      if(k>1){
+      if(k>1&&treads&&j!==gapSide){
         const sm=sj-step*0.5, w=step-tr*0.6;
         const Lt=alongX?2*sm+w:Math.max(w,2*sm-w);
         const tb=lerp(treadH,Math.max(treadH,hj-rise*0.65-base),fill);
@@ -557,8 +578,8 @@ function makeCrystal(R,o){
     g.add(sg); kMax=Math.max(kMax,kb+n);
   }
   // 4) 곁결정: 바깥쪽 계단 테두리 위에 작은 ㄹ자 결정이 거듭 돋아남 (결정 방향은 거의 같음)
-  const nMini=Math.min(7,Math.round(meanderU*6*Math.min(1,o.N/18)));
-  const cand=last.rings.filter(r=>r.k>=o.N*0.45&&r.k<=o.N*0.95);
+  const nMini=Math.round((4+meanderU*30)*Math.min(1,o.N/16));
+  const cand=last.rings.filter(r=>r.k>=o.N*0.3&&r.k<=o.N);
   for(let m=0;m<nMini&&cand.length;m++){
     const r=cand[Math.floor(R()*cand.length)];
     const j=Math.floor(R()*4), t=(R()*1.4-0.7)*r.s;
@@ -566,8 +587,9 @@ function makeCrystal(R,o){
     const mg=new THREE.Group();
     mg.position.set(pt[0],r.h,pt[1]).applyEuler(r.ring.rotation).add(r.ring.position);
     mg.rotation.y=r.ring.rotation.y+(R()-.5)*0.25;
-    const n=4+Math.floor(R()*5), kb=r.k;
-    addRings(mg,bars,R,{N:n,step:sh.step*0.75,rise:rise*0.85,fill:sh.fill*0.5,irr:sh.irr,kBase:kb});
+    const n=3+Math.floor(R()*4), kb=r.k;
+    const sc=0.55+R()*0.35;
+    addRings(mg,bars,R,{N:n,step:sh.step*sc,rise:rise*0.8,fill:sh.fill*0.5,irr:sh.irr,kBase:kb,treads:false,gapBoost:0.25});
     g.add(mg); kMax=Math.max(kMax,kb+n);
   }
   g.position.set(o.x,o.dep||0,o.z);
