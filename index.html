@@ -145,7 +145,7 @@
   <div class="btns">
     <button class="main" id="play">▶<span class="t">재생</span></button>
     <button id="regrow">↻<span class="t">새로 심기</span></button>
-    <button id="tilt">📱<span class="t">기울이기</span></button>
+    <button id="spin">🔄<span class="t">회전</span></button>
     <button id="full">⛶<span class="t">전체화면</span></button>
     <button id="info">ⓘ<span class="t">이야기</span></button>
   </div>
@@ -179,7 +179,8 @@
     <p>손가락으로 끌면 돌아가고, 두 손가락으로 확대해요.<br>
     어느 방향으로든 막힘없이 끝까지 굴려 볼 수 있어요.<br>
     폰을 살짝만 움직여도 빛이 따라 옮겨 가며<br>무지갯빛이 오묘하게 흘러요.<br>
-    ‘기울이기’를 켜면 결정까지<br>손에 쥔 듯 함께 돌아가요.<br>
+    ‘회전’일 때는 손가락으로 휙 밀면<br>그 방향으로 계속 돌아가요.<br>
+    ‘멈춤’으로 바꾸면 손을 뗀 자리에 멈추고<br>폰 각도에 따라 빛만 바뀌어요.<br>
     아래 막대를 끌면 시간을 앞뒤로 옮길 수 있어요.<br>
     ‘새로 심기’를 누르고 쇳물을 톡 누르면<br>그 자리에 씨앗이 심어져요.<br>
     위쪽 ‘심는 깊이’를 1~8단으로 고르면<br>쇳물 속 그 깊이에 철사로 매달아 심어요.<br>
@@ -592,7 +593,7 @@ function apply(t){
     cap.style.opacity=0;
     setTimeout(()=>{cap.innerHTML=PHASES[ph].cap; cap.style.opacity=PHASES[ph].cap?1:0;},350);
   }
-  autoSpin=(playing&&ph>=1)||ph===4;
+  autoSpin=spinMode&&ph>=1;
   autoSpeed=ph===4?0.7:0.35;
 }
 
@@ -710,13 +711,20 @@ async function startSensor(){
 // 안드로이드는 바로 켜지고, 아이폰은 처음 화면을 만질 때 허락을 물어봄
 if(typeof DeviceOrientationEvent!=='undefined'&&!DeviceOrientationEvent.requestPermission) startSensor();
 else addEventListener('click',()=>startSensor(),{once:true});
-$('tilt').onclick=async()=>{
-  if(tiltOn){ tiltOn=false; tiltNow={a:0,b:0,c:0}; $('tilt').classList.remove('on'); return; }
-  const ok=await startSensor();
-  if(!ok){ toast('기울기 센서를 쓸 수 없는 화면이에요.<br>손가락으로 끌어 돌려 보세요.'); return; }
-  tiltBase=null; tiltGot=false; tiltOn=true; $('tilt').classList.add('on');
-  setTimeout(()=>{ if(tiltOn&&!tiltGot){ toast('기울기 센서를 쓸 수 없는 화면이에요.<br>손가락으로 끌어 돌려 보세요.'); tiltOn=false; $('tilt').classList.remove('on'); }},1500);
-};
+// 회전 / 멈춤
+//  회전: 손가락으로 휙 밀면 그 방향으로 계속 돌고, 가만두면 천천히 저절로 돎
+//  멈춤: 손가락을 떼면 그 자리에 딱 멈춤. 폰 각도에 따라 빛만 바뀜
+let spinMode=true;
+function setSpin(on){
+  spinMode=on;
+  controls.staticMoving=!on;
+  controls.dynamicDampingFactor=on?0.002:0.2;
+  $('spin').innerHTML=on?'🔄<span class="t">회전</span>':'✋<span class="t">멈춤</span>';
+  $('spin').classList.toggle('on',on);
+}
+$('spin').onclick=()=>{ startSensor(); setSpin(!spinMode);
+  toast(spinMode?'손가락으로 휙 밀면 계속 돌아가요.':'손을 떼면 멈춰요.<br>폰을 움직이면 빛만 바뀌어요.'); };
+setSpin(true);
 const tmp=new THREE.Vector3(), axR=new THREE.Vector3(), qA=new THREE.Quaternion(), qB=new THREE.Quaternion();
 // 화면 세로축(yaw)·가로축(pitch)으로 카메라를 대상 둘레로 돌림 — 막히는 각도 없음
 function orbitBy(yaw,pitch){
@@ -735,7 +743,7 @@ function applyTilt(){
   glint.position.set(-lx*5,2.5+ly*4,4);
   glint.intensity=0.6+1.6*Math.min(1,Math.hypot(lx,ly)*1.4);
   for(const l of [key,rim,glint]) l.target.position.copy(controls.target);
-  // 색: 평소엔 살짝(±40 nm 정도), '기울이기'를 켜면 크게
+  // 색: 폰 각도에 따라 살짝(±40 nm 정도) 흐름
   const target=(tiltOn?tiltNow.c:0)+(lightSm.x*1.25+lightSm.y*1.0);
   shiftNow+=(target-shiftNow)*0.12; oxU.uShift.value=shiftNow;
   const ta=tiltOn?tiltNow.a:0, tb=tiltOn?tiltNow.b:0;
@@ -775,7 +783,7 @@ renderer.setAnimationLoop(now=>{
   }
   for(const s of seeds) s.m.rotation.y+=dt*1.5;
   apply(T);
-  if(autoSpin&&!touching&&now-touchedAt>2500) orbitBy(-autoSpeed*0.25*dt,0);
+  if(autoSpin&&!touching&&now-touchedAt>4000) orbitBy(-autoSpeed*0.25*dt,0);
   controls.update(); applyTilt();
   renderer.render(scene,camera);
 });
