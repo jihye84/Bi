@@ -145,7 +145,7 @@
 
 <div id="depth">
   <div class="row"><span>심는 깊이</span><small>표면</small><input type="range" id="dep" min="0" max="7" step="1" value="0" aria-label="심는 깊이"><small>깊이</small><b id="depname">1단</b></div>
-  <div class="row"><span>식히기</span><small>천천히</small><input type="range" id="cool" min="0" max="100" value="45" aria-label="식히는 빠르기"><small>빠르게</small><b style="visibility:hidden">1단</b></div>
+  <div class="row"><span>식히기</span><small>천천히</small><input type="range" id="cool" min="0" max="170" value="45" aria-label="식히는 빠르기"><small>빠르게</small><b style="visibility:hidden">1단</b></div>
   <div class="row"><span>ㄹ 무늬</span><small>적게</small><input type="range" id="mea" min="0" max="100" value="50" aria-label="ㄹ 무늬"><small>많이</small><b id="meaname">보통</b></div>
   <div class="row note" id="coolname">계단 결정</div>
 </div>
@@ -185,7 +185,7 @@
   <div class="card"><b>식히기와 계단 모양</b>
     <p>녹는점보다 얼마나 차갑게 식히느냐에 따라<br>모서리가 앞서 자라는 정도가 달라져요.<br>
     살짝 식히면 가운데까지 채워지고,<br>알맞게 식히면 움푹한 계단이 생기고,<br>
-    많이 식히면 곁가지가 돋은 뼈대 결정이 돼요.<br>
+    많이 식히면 곁가지가 돋은 뼈대 결정이 되고,<br>확 식히면 가는 계단이 사방으로 가지를 뻗어요.<br>
     다만 몇 도에서 계단이 몇 mm가 되는지는<br>아직 정확히 밝혀지지 않아서<br>
     이 앱은 모양이 바뀌는 방향만 보여 줘요.</p></div>
   <div class="card"><b>쇳물은 왜 은빛일까</b>
@@ -455,21 +455,24 @@ function rng(seed){let a=seed>>>0;return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.im
 //   많이 차갑게 → 모서리가 내달려 곁가지가 돋는 '뼈대 결정'
 // (정확한 온도-모양 수치는 알려진 자료가 없어 경향만 반영)
 let coolU=0.45, crystalSeed=Math.floor(Math.random()*1e9);
+// 1을 넘으면 '급랭': 녹는점보다 훨씬 아래로 확 식힘 → 가는 계단, 사방으로 가지, 굽이·곁결정 폭증
+let fastU=0;
 function shapeOf(u){
-  const irr=smooth(0.55,1,u);
+  const irr=smooth(0.55,1,u), f=smooth(1,1.7,u);
+  fastU=f;
   return {
-    step:lerp(0.042,0.07,u),
+    step:lerp(0.042,0.07,Math.min(u,1))*lerp(1,0.78,f),
     rise:lerp(0.02,0.088,smooth(0,0.6,u)),
     fill:1-smooth(0.05,0.42,u),
-    irr, sprouts:Math.round(4*smooth(0.3,0.9,u))
+    irr, fast:f, sprouts:Math.round(4*smooth(0.3,0.9,u)+4*f)
   };
 }
-function coolName(u){ return u<0.2?'꽉 찬 결정':u<0.62?'계단 결정':'뼈대 결정'; }
+function coolName(u){ return u<0.2?'꽉 찬 결정':u<0.62?'계단 결정':u<1.05?'뼈대 결정':'급랭 가지 결정'; }
 
 /* 한 층 = 가는 테두리 벽 4개 + 그 안쪽 디딤판 4개.
    테두리가 디딤판보다 솟아 있어 층마다 가는 홈이 생긴다(레고 블록처럼 보이지 않게).
    조각이 많아서 InstancedMesh 하나로 한꺼번에 그린다. */
-const MAXBARS=16000;
+const MAXBARS=30000;
 const inst=new THREE.InstancedMesh(BOX,crystalMat,MAXBARS);
 inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 inst.frustumCulled=false; inst.count=0; world.add(inst);
@@ -499,7 +502,7 @@ function addRings(parent,bars,R,{N,step,rise,fill,irr,kBase=0,twistMul=1,treads=
     // 2) 끊긴 테두리: 한 변이 모서리 앞에서 멈춰 틈이 열린 ㄷ자로 남음.
     //    다음 층은 틈이 90°씩 돌아가며 열려, 층이 쌓이면 ㄹ·回자처럼 감겨 보임
     let gapSide=-1;
-    if(k>1&&R()<Math.min(0.95,0.05+0.6*mU+gapBoost)) gapSide=prevDrop>=0?(prevDrop+1)%4:Math.floor(R()*4);
+    if(k>1&&R()<Math.min(0.95,0.05+0.6*mU+gapBoost+0.3*fastU)) gapSide=prevDrop>=0?(prevDrop+1)%4:Math.floor(R()*4);
     prevDrop=gapSide>=0?gapSide:-1;
     const drop=-1;
     for(let jj=0;jj<4;jj++){
@@ -520,7 +523,7 @@ function addRings(parent,bars,R,{N,step,rise,fill,irr,kBase=0,twistMul=1,treads=
         const seg=(c0,len,dirS,offS)=>push(ring,{k:k+kBase,j,alongX,L:len,t:tr,h:hj,hb,
           cx:alongX?c0:side*sj, cz:alongX?side*sj:c0, dir:dirS, off:offS});
         // 변 가운데가 끊기고, 끊긴 자리에서 안쪽 층으로 꺾여 들어가는 짧은 벽 → ㄷ·ㄹ자 굽이
-        if(k>2&&Lr>step*5&&R()<0.08+0.6*mU){
+        if(k>2&&Lr>step*5&&R()<0.08+0.6*mU+0.3*fastU){
           const a0=ac+off-Lr/2, a1=ac+off+Lr/2;
           const gl=step*(1.2+R()*1.6), u=lerp(a0+Lr*0.22,a1-Lr*0.22,R());
           const l1=(u-gl/2)-a0, l2=a1-(u+gl/2);
@@ -566,20 +569,20 @@ function makeCrystal(R,o){
   const last=addRings(g,bars,R,{N:o.N,step:sh.step,rise,fill:sh.fill,irr:sh.irr});
   let kMax=o.N;
   // 뼈대 결정: 바깥 모서리에서 작은 결정이 비스듬히 돋아남
-  const corners=[[1,1],[1,-1],[-1,1],[-1,-1]].sort(()=>R()-.5).slice(0,sh.sprouts);
+  const corners=[[1,1],[1,-1],[-1,1],[-1,-1]].sort(()=>R()-.5).concat([[1,0],[0,1],[-1,0],[0,-1]].sort(()=>R()-.5)).slice(0,sh.sprouts);
   for(const [cx,cz] of corners){
     const sg=new THREE.Group();
     const p=new THREE.Vector3(cx*last.s*0.9,last.h-rise*1.5,cz*last.s*0.9).applyEuler(last.ring.rotation).add(last.ring.position);
     sg.position.copy(p);
     const out=new THREE.Vector3(cx,0,cz).normalize();
-    sg.quaternion.setFromAxisAngle(new THREE.Vector3(out.z,0,-out.x),0.3+R()*0.25);
+    sg.quaternion.setFromAxisAngle(new THREE.Vector3(out.z,0,-out.x),0.3+R()*(0.25+0.45*sh.fast));
     sg.rotateY(R()*1.57);
-    const n=6+Math.floor(R()*(4+sh.irr*6)), kb=o.N-4;
+    const n=6+Math.floor(R()*(4+sh.irr*6+sh.fast*6)), kb=o.N-4;
     addRings(sg,bars,R,{N:n,step:sh.step*0.8,rise:rise*0.85,fill:0,irr:sh.irr,kBase:kb,twistMul:2});
     g.add(sg); kMax=Math.max(kMax,kb+n);
   }
   // 4) 곁결정: 바깥쪽 계단 테두리 위에 작은 ㄹ자 결정이 거듭 돋아남 (결정 방향은 거의 같음)
-  const nMini=Math.round((4+meanderU*30)*Math.min(1,o.N/16));
+  const nMini=Math.round((4+meanderU*30)*(1+1.2*sh.fast)*Math.min(1,o.N/16));
   const cand=last.rings.filter(r=>r.k>=o.N*0.3&&r.k<=o.N);
   for(let m=0;m<nMini&&cand.length;m++){
     const r=cand[Math.floor(R()*cand.length)];
@@ -753,7 +756,7 @@ function apply(t){
   else temp=lerp(240,25,smooth(0.70,1,t));
   let r=`${temp.toFixed(1)} °C`;
   if(ph===0) r=`씨앗 ${seeds.length}/${MAXSEEDS} · ${r}`;
-  else if(ph===1) r=`결정 ${Math.round(g*100)}% · ${coolName(coolU)}<br>녹는점(271.4 °C)보다 ${coolU<0.2?'살짝':coolU<0.62?'조금':'한참'} 아래`;
+  else if(ph===1) r=`결정 ${Math.round(g*100)}% · ${coolName(coolU)}<br>녹는점(271.4 °C)보다 ${coolU<0.2?'살짝':coolU<0.62?'조금':coolU<1.05?'한참':'아주 한참'} 아래`;
   else if(ph>=3){ const [n,c]=colorName(d); r=`<span id="swatch" style="background:${c};color:${c}"></span>${n} 즈음 · 산화막 약 ${Math.round(d)} nm<br>${r}`; }
   $('reading').innerHTML=r;
   document.querySelectorAll('#ticks span').forEach((s,i)=>s.classList.toggle('on',i===Math.min(ph,3)));
@@ -817,7 +820,8 @@ coolEl.addEventListener('input',()=>{
   if(coolName(coolU)!==prev){
     const tip={'꽉 찬 결정':'녹는점 바로 아래에서 천천히 식히면<br>가운데까지 채워진 결정이 돼요.',
       '계단 결정':'알맞게 식히면 모서리가 앞서 자라<br>움푹한 계단이 생겨요.',
-      '뼈대 결정':'빠르게 식히면 모서리가 내달려<br>곁가지가 돋은 뼈대 결정이 돼요.'}[coolName(coolU)];
+      '뼈대 결정':'빠르게 식히면 모서리가 내달려<br>곁가지가 돋은 뼈대 결정이 돼요.',
+      '급랭 가지 결정':'확 식히면 계단이 가늘어지고<br>사방으로 가지가 뻗어 나가요.'}[coolName(coolU)];
     toast(tip);
   }
 });
@@ -1102,7 +1106,7 @@ function loadRecipe(){
     const [sd,cv,list,mv]=c.split('~');
     if(mv!==undefined){ meanderU=clamp((+mv)/100); $('mea').value=Math.round(meanderU*100); $('meaname').textContent=meaName(meanderU); }
     crystalSeed=parseInt(sd,36)||crystalSeed;
-    coolU=clamp((+cv||45)/100); $('cool').value=Math.round(coolU*100); $('coolname').textContent=coolName(coolU);
+    coolU=clamp((+cv||45)/100,0,1.7); $('cool').value=Math.round(coolU*100); $('coolname').textContent=coolName(coolU);
     clearSeeds();
     for(const it of (list||'').split('.').slice(0,MAXSEEDS)){
       const [x,z,d]=it.split('_').map(Number); if([x,z].some(isNaN)) continue;
