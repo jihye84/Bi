@@ -178,7 +178,8 @@
   <div class="card"><b>감상하는 법</b>
     <p>손가락으로 끌면 돌아가고, 두 손가락으로 확대해요.<br>
     어느 방향으로든 막힘없이 끝까지 굴려 볼 수 있어요.<br>
-    ‘기울이기’를 켜면 폰 각도에 따라<br>결정이 돌고 무지갯빛도 바뀌어요.<br>
+    폰을 살짝만 움직여도 빛이 따라 옮겨 가며<br>무지갯빛이 오묘하게 흘러요.<br>
+    ‘기울이기’를 켜면 결정까지<br>손에 쥔 듯 함께 돌아가요.<br>
     아래 막대를 끌면 시간을 앞뒤로 옮길 수 있어요.<br>
     ‘새로 심기’를 누르고 쇳물을 톡 누르면<br>그 자리에 씨앗이 심어져요.<br>
     위쪽 ‘심는 깊이’를 1~8단으로 고르면<br>쇳물 속 그 깊이에 철사로 매달아 심어요.<br>
@@ -248,8 +249,11 @@ let autoSpin=false, autoSpeed=0.35, touchedAt=-1e9, touching=false;
 controls.addEventListener('start',()=>{touching=true;});
 controls.addEventListener('end',()=>{touching=false; touchedAt=performance.now();});
 
-const key=new THREE.DirectionalLight(0xfff4ea,2.2); key.position.set(4,7,3); scene.add(key);
-const rim=new THREE.DirectionalLight(0xc8d4ff,1.1); rim.position.set(-5,3,-4); scene.add(rim);
+scene.add(camera);
+const key=new THREE.DirectionalLight(0xfff4ea,2.2); key.position.set(3.2,4.2,2.5); camera.add(key);
+const rim=new THREE.DirectionalLight(0xc8d4ff,1.1); rim.position.set(-4,1.2,-3); camera.add(rim);
+const glint=new THREE.DirectionalLight(0xfff0f6,0.6); glint.position.set(0,2.5,4); camera.add(glint);
+for(const l of [key,rim,glint]) scene.add(l.target);
 const hot=new THREE.PointLight(0xff7a30,0,9,1.5); hot.position.set(0,-0.8,0); scene.add(hot);
 
 /* ---------- 결정 재질 : 산화막 두께를 매끄러운 '두께 지형'으로 계산 ----------
@@ -660,24 +664,43 @@ $('full').onclick=async()=>{
   }catch(e){ toast('이 화면에서는 전체화면을 쓸 수 없어요'); }
 };
 
+/* 폰 각도 센서
+   - 항상: 폰을 조금만 움직여도 조명이 따라 움직이고 산화막 색이 살짝 흘러감 (오묘한 빛)
+   - '기울이기'를 켜면: 결정까지 손에 쥔 듯 함께 돌아감 */
 let tiltOn=false, tiltBase=null, tiltNow={a:0,b:0,c:0}, tiltApplied={a:0,b:0}, tiltGot=false, shiftNow=0;
+let sensorOn=false, raw=null, lightBase=null, lightNow={x:0,y:0}, lightSm={x:0,y:0};
 function onOrient(e){
-  if(e.beta==null) return; tiltGot=true;
-  if(!tiltBase) tiltBase={b:e.beta,g:e.gamma};
-  tiltNow.a=clamp((e.gamma-tiltBase.g),-35,35)*Math.PI/180*0.9;
-  tiltNow.b=clamp((e.beta-tiltBase.b),-60,60)*Math.PI/180*0.9;
-  tiltNow.c=clamp((e.gamma-tiltBase.g)*1.6+(e.beta-tiltBase.b)*1.2,-80,80);
+  if(e.beta==null) return; tiltGot=true; raw={b:e.beta,g:e.gamma};
+  // 조명용 기준은 천천히 따라와서, 움직일 때마다 빛이 새로 일렁임
+  if(!lightBase) lightBase={b:e.beta,g:e.gamma};
+  lightBase.b+=(e.beta-lightBase.b)*0.004; lightBase.g+=(e.gamma-lightBase.g)*0.004;
+  lightNow.x=clamp(e.gamma-lightBase.g,-40,40); lightNow.y=clamp(e.beta-lightBase.b,-40,40);
+  if(tiltOn){
+    if(!tiltBase) tiltBase={b:e.beta,g:e.gamma};
+    tiltNow.a=clamp((e.gamma-tiltBase.g),-35,35)*Math.PI/180*0.9;
+    tiltNow.b=clamp((e.beta-tiltBase.b),-60,60)*Math.PI/180*0.9;
+    tiltNow.c=clamp((e.gamma-tiltBase.g)*1.6+(e.beta-tiltBase.b)*1.2,-80,80);
+  }
 }
-$('tilt').onclick=async()=>{
-  if(tiltOn){ tiltOn=false; window.removeEventListener('deviceorientation',onOrient); $('tilt').classList.remove('on'); return; }
+async function startSensor(){
+  if(sensorOn) return true;
   try{
-    if(typeof DeviceOrientationEvent!=='undefined'&&DeviceOrientationEvent.requestPermission){
-      const r=await DeviceOrientationEvent.requestPermission(); if(r!=='granted') throw 0;
+    if(typeof DeviceOrientationEvent==='undefined') return false;
+    if(DeviceOrientationEvent.requestPermission){
+      const r=await DeviceOrientationEvent.requestPermission(); if(r!=='granted') return false;
     }
-    tiltBase=null; tiltGot=false; tiltOn=true; $('tilt').classList.add('on');
-    window.addEventListener('deviceorientation',onOrient);
-    setTimeout(()=>{ if(tiltOn&&!tiltGot){ toast('기울기 센서를 쓸 수 없는 화면이에요.<br>손가락으로 끌어 돌려 보세요.'); tiltOn=false; $('tilt').classList.remove('on'); }},1500);
-  }catch(e){ toast('기울기 센서를 쓸 수 없는 화면이에요.<br>손가락으로 끌어 돌려 보세요.'); }
+    window.addEventListener('deviceorientation',onOrient); sensorOn=true; return true;
+  }catch(e){ return false; }
+}
+// 안드로이드는 바로 켜지고, 아이폰은 처음 화면을 만질 때 허락을 물어봄
+if(typeof DeviceOrientationEvent!=='undefined'&&!DeviceOrientationEvent.requestPermission) startSensor();
+else addEventListener('click',()=>startSensor(),{once:true});
+$('tilt').onclick=async()=>{
+  if(tiltOn){ tiltOn=false; tiltNow={a:0,b:0,c:0}; $('tilt').classList.remove('on'); return; }
+  const ok=await startSensor();
+  if(!ok){ toast('기울기 센서를 쓸 수 없는 화면이에요.<br>손가락으로 끌어 돌려 보세요.'); return; }
+  tiltBase=null; tiltGot=false; tiltOn=true; $('tilt').classList.add('on');
+  setTimeout(()=>{ if(tiltOn&&!tiltGot){ toast('기울기 센서를 쓸 수 없는 화면이에요.<br>손가락으로 끌어 돌려 보세요.'); tiltOn=false; $('tilt').classList.remove('on'); }},1500);
 };
 const tmp=new THREE.Vector3(), axR=new THREE.Vector3(), qA=new THREE.Quaternion(), qB=new THREE.Quaternion();
 // 화면 세로축(yaw)·가로축(pitch)으로 카메라를 대상 둘레로 돌림 — 막히는 각도 없음
@@ -689,7 +712,17 @@ function orbitBy(yaw,pitch){
   camera.position.copy(controls.target).add(tmp); camera.lookAt(controls.target);
 }
 function applyTilt(){
-  shiftNow+=((tiltOn?tiltNow.c:0)-shiftNow)*0.12; oxU.uShift.value=shiftNow;
+  lightSm.x+=(lightNow.x-lightSm.x)*0.08; lightSm.y+=(lightNow.y-lightSm.y)*0.08;
+  // 조명: 폰을 기울인 쪽으로 등불이 옮겨 가는 느낌
+  const lx=lightSm.x/40, ly=lightSm.y/40;
+  key.position.set(3.2+lx*7,4.2-ly*6,2.5+Math.abs(lx)*-1.5);
+  rim.position.set(-4-lx*3,1.2+ly*3,-3);
+  glint.position.set(-lx*5,2.5+ly*4,4);
+  glint.intensity=0.6+1.6*Math.min(1,Math.hypot(lx,ly)*1.4);
+  for(const l of [key,rim,glint]) l.target.position.copy(controls.target);
+  // 색: 평소엔 살짝(±40 nm 정도), '기울이기'를 켜면 크게
+  const target=(tiltOn?tiltNow.c:0)+(lightSm.x*1.25+lightSm.y*1.0);
+  shiftNow+=(target-shiftNow)*0.12; oxU.uShift.value=shiftNow;
   const ta=tiltOn?tiltNow.a:0, tb=tiltOn?tiltNow.b:0;
   const da=(ta-tiltApplied.a)*0.15, db=(tb-tiltApplied.b)*0.15;
   if(Math.abs(da)+Math.abs(db)<1e-5) return;
