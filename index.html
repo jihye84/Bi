@@ -293,6 +293,21 @@ float oxThick(vec3 p){
   float f = 0.45 + 0.62*r + 0.10*p.y + 0.42*(fbm(q*0.8+w*1.8)-0.5) + 0.03*(vn(q*6.0)-0.5);
   return max(0.0, uD*f + uShift*(0.6+0.4*f));
 }`)
+    // 표면 결: 잔물결 + 계단과 나란한 가는 성장 줄무늬 + 드문드문 오목한 점 (범프로 법선만 살짝 흔듦)
+    .replace('#include <roughnessmap_fragment>',`#include <roughnessmap_fragment>
+  float sPit=smoothstep(0.88,0.98,vn(vOx*55.0+uOff));
+  roughnessFactor=clamp(roughnessFactor+(fbm(vOx*7.0+uOff)-0.5)*0.16+sPit*0.1,0.06,0.5);`)
+    .replace('#include <normal_fragment_maps>',`#include <normal_fragment_maps>
+  {
+    float hgt = (fbm(vOx*9.0+uOff)-0.5)*0.0022
+              + sin(vOx.y*150.0 + fbm(vOx*5.0)*5.0)*0.00018*(0.4+vn(vOx*3.0))
+              - smoothstep(0.88,0.98,vn(vOx*55.0+uOff))*0.0007;
+    vec3 sp=-vViewPosition, sx=dFdx(sp), sy=dFdy(sp);
+    vec3 r1=cross(sy,normal), r2=cross(normal,sx);
+    float det=dot(sx,r1);
+    vec3 grad=sign(det)*(dFdx(hgt)*r1+dFdy(hgt)*r2);
+    normal=normalize(abs(det)*normal-grad);
+  }`)
     .replace('#include <lights_physical_fragment>',`#include <lights_physical_fragment>
 #ifdef USE_IRIDESCENCE
   material.iridescenceThickness = oxThick(vOx);
