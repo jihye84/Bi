@@ -200,7 +200,9 @@
   <div class="card"><b>실제로는 이렇게 만들어요</b>
     <p>비스무트는 약 271 °C에서 녹아요.<br>
     쇳물이 식으면 표면에 붙은 씨앗에서<br>결정이 쇳물 속으로 자라 내려가요.<br>
+    건지기 전에 표면에 낀 산화 껍질을 걷어 내고,<br>
     알맞은 때 건져 뒤집으면<br>움푹한 계단 쪽이 위로 옵니다.<br>
+    쇳물은 표면장력이 있어서<br>씨앗이나 철사에 닿은 자리가 살짝 딸려 올라와요.<br>
     뜨거울 때 공기와 만나야 색이 곱게 피어나요.</p></div>
   <div class="card"><b>감상하는 법</b>
     <p>손가락으로 끌면 돌아가고, 두 손가락으로 확대해요.<br>
@@ -417,6 +419,45 @@ for(let i=1;i<=8;i++){
 }
 function setLayers(f){ for(const m of glows){ m.material.opacity=m.userData.base*f; m.visible=f>0.01; } }
 
+/* ---------- 쇳물 표면 껍질 ----------
+   식는 동안 공기와 닿은 표면에 탁한 산화 껍질이 군데군데 생김.
+   결정을 건지기 전에 한쪽 끝부터 돌돌 말아 걷어 냄 */
+const skinU={uFront:{value:-4},uCov:{value:0},uFade:{value:0},uSeedT:{value:0}};
+const skinMat=new THREE.MeshStandardMaterial({color:0x6d6670,metalness:0.35,roughness:0.85,transparent:true,
+  side:THREE.DoubleSide,depthWrite:false,flatShading:true});
+skinMat.onBeforeCompile=sh=>{
+  Object.assign(sh.uniforms,skinU);
+  sh.vertexShader=sh.vertexShader
+    .replace('#include <common>','#include <common>\nuniform float uFront;\nvarying vec2 vP;\nvarying float vRoll;')
+    .replace('#include <begin_vertex>',`#include <begin_vertex>
+  vP=transformed.xy; vRoll=0.0;
+  float d=uFront-transformed.x;
+  if(d>0.0){
+    float Rr=0.09+d*0.022, th=d/Rr;
+    transformed.x=uFront-Rr*sin(th);
+    transformed.z=Rr*(1.0-cos(th))+0.004;
+    vRoll=1.0;
+  }
+  transformed.z+=0.006;`);
+  sh.fragmentShader=sh.fragmentShader
+    .replace('#include <common>',`#include <common>
+uniform float uCov,uFade; varying vec2 vP; varying float vRoll;
+float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float n2(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);
+  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}
+float fb2(vec2 p){float a=0.5,s=0.0;for(int i=0;i<5;i++){s+=a*n2(p);p=p*2.07+vec2(3.1,1.7);a*=0.5;}return s;}`)
+    .replace('#include <color_fragment>',`#include <color_fragment>
+  float nz=fb2(vP*1.6);
+  float skp=smoothstep(1.0-uCov-0.06,1.0-uCov+0.06,nz);
+  float rim=1.0-smoothstep(2.7,3.25,length(vP));
+  float wr=fb2(vP*9.0);
+  diffuseColor.rgb*=0.75+0.5*wr;
+  diffuseColor.a=skp*rim*mix(0.78,0.95,vRoll)*uFade;
+  if(diffuseColor.a<0.01) discard;`);
+};
+const skin=new THREE.Mesh(new THREE.PlaneGeometry(6.6,6.6,220,24),skinMat);
+skin.rotation.x=-Math.PI/2; skin.position.y=0.002; skin.renderOrder=3; scene.add(skin);
+
 /* ---------- 씨앗 ---------- */
 const seedGroup=new THREE.Group(); scene.add(seedGroup);
 const seedGeo=new THREE.OctahedronGeometry(0.06);
@@ -429,15 +470,27 @@ const wireMat=new THREE.MeshBasicMaterial({color:0xcfc6c0,transparent:true,opaci
 // 고른 깊이를 알려 주는 희미한 안내 고리
 const guide=new THREE.Mesh(new THREE.RingGeometry(2.62,2.7,96),new THREE.MeshBasicMaterial({color:0xffd9a8,transparent:true,opacity:0.35,side:THREE.DoubleSide,depthWrite:false}));
 guide.rotation.x=-Math.PI/2; guide.visible=false; scene.add(guide);
+/* 표면장력: 씨앗·철사가 표면과 닿은 자리에 쇳물이 살짝 딸려 올라와 오목한 고리를 만듦 */
+const menisGroup=new THREE.Group(); scene.add(menisGroup);
+const menisMat=new THREE.MeshPhysicalMaterial({color:0xd4d5dc,metalness:0.7,roughness:0.1,envMap:studioEnv,envMapIntensity:2.2,
+  transparent:true,opacity:0.85,side:THREE.DoubleSide,depthWrite:false});
+function menisGeo(r0,h,R){
+  const pts=[];
+  for(let i=0;i<=28;i++){ const t=i/28; pts.push(new THREE.Vector2(r0+(R-r0)*Math.pow(t,1.5), h*Math.pow(1-t,2.6)-0.002)); }
+  return new THREE.LatheGeometry(pts,48);
+}
+const MENIS_SEED=menisGeo(0.055,0.05,0.26), MENIS_WIRE=menisGeo(0.011,0.075,0.2);
 function addSeed(x,z,dep=0){
   const m=new THREE.Mesh(seedGeo,seedMat); m.position.set(x,-dep-0.04,z); seedGroup.add(m);
   const r=new THREE.Mesh(rippleGeo,new THREE.MeshBasicMaterial({color:0xffe2b8,transparent:true,opacity:0.8,side:THREE.DoubleSide,depthWrite:false}));
   r.rotation.x=-Math.PI/2; r.position.set(x,-dep+0.01,z); r.userData.t0=performance.now(); scene.add(r); ripples.push(r);
   let w=null;
   if(dep>0){ w=new THREE.Mesh(new THREE.CylinderGeometry(0.008,0.008,dep+0.6,6),wireMat); w.position.set(x,(0.6-dep)/2,z); wireGroup.add(w); }
-  seeds.push({x,z,dep,m,w});
+  const mn=new THREE.Mesh(dep>0?MENIS_WIRE:MENIS_SEED,menisMat);
+  mn.position.set(x,0,z); mn.userData.t0=performance.now(); menisGroup.add(mn);
+  seeds.push({x,z,dep,m,w,mn});
 }
-function clearSeeds(){ for(const s of seeds){ seedGroup.remove(s.m); if(s.w) wireGroup.remove(s.w); } seeds=[]; }
+function clearSeeds(){ for(const s of seeds){ seedGroup.remove(s.m); if(s.w) wireGroup.remove(s.w); menisGroup.remove(s.mn); } seeds=[]; }
 
 /* ---------- 호퍼 결정 ----------
    pivot을 뒤집어(π) 두면 씨앗 쪽이 쇳물 표면에 붙고 결정은 아래로 자란다.
@@ -669,7 +722,7 @@ const MAX_NM=235, SEED_T=0.10;
 const PHASES=[
   {name:'씨앗 심기',cap:'쇳물을 톡 눌러<br>씨앗을 심어 보세요. (최대 6개)'},
   {name:'자라기',cap:'씨앗에서 결정이<br>쇳물 속으로 자라 내려가요.'},
-  {name:'건지기',cap:'결정을 건져 뒤집으면<br>움푹한 계단이 드러나요.'},
+  {name:'건지기',cap:'표면의 껍질을 걷어 내고<br>결정을 건져 뒤집어요.'},
   {name:'색 피어나기',cap:'뜨거운 결정이 공기를 만나<br>얇은 막 위로 색이 번져요.'},
   {name:'감상',cap:''}
 ];
@@ -698,7 +751,7 @@ function meltFrame(){
   pivot.rotation.x=0; pivot.position.y=lerp(0.15,-half*1.3,m); // 쇳물 속으로 가라앉음
   pivot.updateMatrixWorld(true);
   oxU.uWorldInv.value.copy(tmpM.copy(world.matrixWorld).invert());
-  meltU.uFade.value=1; melt.visible=true; setLayers(1);
+  meltU.uFade.value=1; melt.visible=true; setLayers(1); skin.visible=false; menisGroup.visible=false;
   seedGroup.visible=false; wireGroup.visible=false; guide.visible=false; $('depth').classList.add('off');
   controls.target.y+=(0-controls.target.y)*0.06;
   $('phase').textContent='녹이기';
@@ -715,8 +768,17 @@ function apply(t){
   if(meltAnim){ meltFrame(); return; }
   const heat=1-smooth(0.06,0.5,t);
   const g=smooth(SEED_T,0.6,t);
-  const fade=smooth(0.6,0.645,t);
-  const flip=smooth(0.625,0.7,t);
+  const peel=smooth(0.6,0.638,t);
+  const fade=smooth(0.638,0.668,t);
+  const flip=smooth(0.652,0.7,t);
+  // 껍질: 자라는 동안 점점 늘어나고, 건질 때 왼쪽부터 말려 걷힘
+  skinU.uCov.value=0.62*smooth(0.16,0.58,t);
+  skinU.uFront.value=lerp(-3.5,3.9,peel);
+  skinU.uFade.value=1-smooth(0.63,0.648,t);
+  skin.visible=skinU.uFade.value>0.01&&skinU.uCov.value>0.005;
+  skin.position.y=0.002+smooth(0.63,0.648,t)*0.6;
+  // 표면장력 고리: 쇳물과 함께 사라짐
+  menisMat.opacity=0.85*(1-fade); menisGroup.visible=fade<0.99;
   const ox=smooth(0.70,0.985,t);
   const d=ox*MAX_NM;
 
@@ -1150,7 +1212,12 @@ renderer.setAnimationLoop(now=>{
     if(a>=1){ scene.remove(r); ripples.splice(i,1); continue; }
     r.scale.setScalar(0.05+a*0.9); r.material.opacity=0.8*(1-a);
   }
-  for(const s of seeds) s.m.rotation.y+=dt*1.5;
+  for(const s of seeds){ s.m.rotation.y+=dt*1.5;
+    const a=(now-s.mn.userData.t0)/1000;
+    if(a<2.5){ const w=Math.exp(-a*2.6)*Math.sin(a*13);
+      s.mn.scale.set(0.35+0.65*smooth(0,0.25,a)+0.08*w,1+0.9*w+0.6*Math.exp(-a*6),0.35+0.65*smooth(0,0.25,a)+0.08*w); }
+    else s.mn.scale.set(1,1+0.04*Math.sin(now/700+s.x*3),1);
+  }
   recTick(dt);
   if(meltAnim) meltAnim.t+=dt;
   meltU.uTime.value=now/1000; oxU.uTime.value=now/1000;
