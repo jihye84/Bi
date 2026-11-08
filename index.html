@@ -78,7 +78,9 @@
   #depth .row.note{justify-content:center;font-size:12px;font-weight:600;color:#ffd9a8;padding-bottom:2px}
   #depth span{color:var(--dim);margin-right:2px;min-width:52px}
   #depth small{font-size:10.5px;color:var(--dim)}
-  #cool,#dep{width:120px;height:26px}
+  #cool,#dep,#mea{width:120px;height:26px}
+  #mea::-webkit-slider-runnable-track{background:linear-gradient(90deg,#cfd6e6,#7fe0c8,#b36be0)}
+  #mea::-moz-range-track{background:linear-gradient(90deg,#cfd6e6,#7fe0c8,#b36be0)}
   #depth b{font-size:11.5px;color:#ffd9a8;min-width:24px;text-align:right}
   #dep::-webkit-slider-runnable-track{background:linear-gradient(90deg,#f3e6dc,#c4703a)}
   #dep::-moz-range-track{background:linear-gradient(90deg,#f3e6dc,#c4703a)}
@@ -102,7 +104,7 @@
   .shnote{font-size:11px;color:var(--dim);margin-top:10px;line-height:1.6;text-align:center}
   #recbadge{position:fixed;top:calc(var(--sat) + 14px);left:50%;transform:translateX(-50%);background:rgba(200,30,40,.85);
     color:#fff;font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:20px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:20}
-  #toast{position:fixed;top:calc(var(--sat) + 196px);left:50%;transform:translateX(-50%);background:var(--glass);
+  #toast{position:fixed;top:calc(var(--sat) + 228px);left:50%;transform:translateX(-50%);background:var(--glass);
     border:1px solid var(--line);border-radius:12px;padding:9px 14px;font-size:12.5px;opacity:0;transition:opacity .4s;
     pointer-events:none;text-align:center;line-height:1.5;backdrop-filter:blur(10px);white-space:nowrap}
   #loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;font-family:'Noto Serif KR';
@@ -144,6 +146,7 @@
 <div id="depth">
   <div class="row"><span>심는 깊이</span><small>표면</small><input type="range" id="dep" min="0" max="7" step="1" value="0" aria-label="심는 깊이"><small>깊이</small><b id="depname">1단</b></div>
   <div class="row"><span>식히기</span><small>천천히</small><input type="range" id="cool" min="0" max="100" value="45" aria-label="식히는 빠르기"><small>빠르게</small><b style="visibility:hidden">1단</b></div>
+  <div class="row"><span>ㄹ 무늬</span><small>적게</small><input type="range" id="mea" min="0" max="100" value="50" aria-label="ㄹ 무늬"><small>많이</small><b id="meaname">보통</b></div>
   <div class="row note" id="coolname">계단 결정</div>
 </div>
 <div id="caption"></div>
@@ -188,6 +191,12 @@
   <div class="card"><b>쇳물은 왜 은빛일까</b>
     <p>비스무트는 271 °C쯤에서 녹아요.<br>쇠가 붉게 빛나려면 500 °C 넘게 뜨거워야 해서,<br>
     녹은 비스무트는 빛나지 않고<br>거울 같은 은빛 액체로 보여요.</p></div>
+  <div class="card"><b>ㄷ·ㄹ 무늬는 어떻게 생길까</b>
+    <p>테두리가 한 바퀴를 다 돌기 전에 멈추면<br>한쪽이 빈 ㄷ자가 남고,<br>
+    다음 층이 반대쪽에서 끊기면 ㄹ자로 엇갈려요.<br>
+    결정 속 원자 층이 나사처럼 어긋나 있으면<br>계단이 끊기지 않고 네모 나선으로 감겨 올라가요.<br>
+    큰 계단 위에 작은 결정이 또 돋으면<br>무늬가 겹겹이 복잡해져요.<br>
+    (정확한 원리는 아직 다 밝혀지지 않았어요.)</p></div>
   <div class="card"><b>실제로는 이렇게 만들어요</b>
     <p>비스무트는 약 271 °C에서 녹아요.<br>
     쇳물이 식으면 표면에 붙은 씨앗에서<br>결정이 쇳물 속으로 자라 내려가요.<br>
@@ -409,19 +418,26 @@ function coolName(u){ return u<0.2?'꽉 찬 결정':u<0.62?'계단 결정':'뼈�
 /* 한 층 = 가는 테두리 벽 4개 + 그 안쪽 디딤판 4개.
    테두리가 디딤판보다 솟아 있어 층마다 가는 홈이 생긴다(레고 블록처럼 보이지 않게).
    조각이 많아서 InstancedMesh 하나로 한꺼번에 그린다. */
-const MAXBARS=9000;
+const MAXBARS=16000;
 const inst=new THREE.InstancedMesh(BOX,crystalMat,MAXBARS);
 inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 inst.frustumCulled=false; inst.count=0; world.add(inst);
 const ZERO=new THREE.Matrix4().makeScale(0,0,0);
 let allBars=[], growRate=30, lastG=-1;
 
+// ㄹ 무늬 정도 (0~1): 네모 나선 · 끊긴 테두리(ㄷ) · 계단 위 곁결정이 얼마나 자주 생기는지
+let meanderU=0.5;
+
 function addRings(parent,bars,R,{N,step,rise,fill,irr,kBase=0,twistMul=1}){
+  const mU=meanderU;
   const tr=step*0.5, rimH=rise*2.2+0.012, treadH=rise*0.55+0.006;
   const twist=(R()<.5?-1:1)*(0.004+R()*0.008)*(1+irr*1.5)*twistMul;
   const drift=step*(0.03+R()*0.05)*(1+irr), driftA=R()*6.28;
   const base=rise-rimH;
-  let last=null;
+  // 3) 네모 나선: 나사 전위 둘레로 층이 끊기지 않고 감겨 올라감 — 한 변마다 1/4층씩 바깥·위로
+  const spiral=R()<0.12+0.6*mU?1:0, sDir=R()<.5?1:-1;
+  let prevDrop=-1;
+  const rings=[];
   const push=(ring,o)=>{ const d=new THREE.Object3D(); ring.add(d); o.d=d; bars.push(o); };
   for(let k=1;k<=N;k++){
     const ring=new THREE.Group();
@@ -429,35 +445,45 @@ function addRings(parent,bars,R,{N,step,rise,fill,irr,kBase=0,twistMul=1}){
     ring.position.set(Math.cos(driftA+k*0.3)*drift*k*0.2,0,Math.sin(driftA+k*0.3)*drift*k*0.2);
     const s=k*step, h=k*rise+(R()-.5)*rise*0.2*(1+2*irr);
     const spin=R()<.5?1:-1;
-    for(let j=0;j<4;j++){
+    // 2) 끊긴 테두리: 한 변이 끝내 자라지 못해 ㄷ자로 남음. 다음 층은 반대쪽이 끊겨 ㄹ자로 엇갈림
+    let drop=-1;
+    if(k>2&&R()<0.04+0.5*mU) drop=prevDrop>=0?(prevDrop+2)%4:Math.floor(R()*4);
+    prevDrop=drop;
+    for(let jj=0;jj<4;jj++){
+      const j=jj, q=spiral?((sDir>0?jj:3-jj)/4):0;
+      const sj=s+q*step, hj=h+q*rise;
       const alongX=j%2===0;
-      // 모서리를 지나 삐죽 나가는 갈고리(사진의 꺾쇠 무늬)
-      const hook=(k>2&&R()<0.22+0.25*irr)?step*(1.2+R()*2.6):0;
-      const L=(alongX?2*s+tr:Math.max(tr,2*s-tr))+hook;
-      const missing=k>3&&R()<0.03+0.25*irr?0.45+R()*0.45:1;
-      const hw=rimH*(0.9+R()*0.2);
-      const hb=lerp(hw,Math.max(hw,h-base),fill);
       const side=(j===0||j===3)?-1:1;
-      push(ring,{k:k+kBase,j,alongX,L:L*missing,t:tr,h,hb,
-        cx:alongX?hook*0.5*spin:side*s, cz:alongX?side*s:hook*0.5*spin,
-        dir:spin*(j<2?1:-1), off:(1-missing)*L*0.5*(R()<.5?1:-1)});
-      // 갈고리 끝에서 직각으로 꺾여 나가는 짧은 벽 → 꺾쇠(번개무늬)
-      if(hook&&missing===1){
-        const ls=step*(1+R()*2.2), endA=spin*(L/2-tr/2), out=side*(s+ls/2-tr/2);
-        push(ring,{k:k+kBase,j:j+0.8,alongX:!alongX,L:ls,t:tr,h,hb:hw,
-          cx:alongX?endA+hook*0.5*spin:out, cz:alongX?out:endA+hook*0.5*spin, dir:side,off:0});
+      const hw=rimH*(0.9+R()*0.2);
+      if(j!==drop){
+        // 모서리를 지나 삐죽 나가는 갈고리(꺾쇠 무늬)
+        const hook=(k>2&&R()<0.12+0.3*mU+0.2*irr)?step*(1.2+R()*2.6):0;
+        const L=(alongX?2*sj+tr:Math.max(tr,2*sj-tr))+hook;
+        const missing=k>3&&R()<0.03+0.25*irr?0.45+R()*0.45:1;
+        const hb=lerp(hw,Math.max(hw,hj-base),fill);
+        push(ring,{k:k+kBase,j,alongX,L:L*missing,t:tr,h:hj,hb,
+          cx:alongX?hook*0.5*spin:side*sj, cz:alongX?side*sj:hook*0.5*spin,
+          dir:spin*(j<2?1:-1), off:(1-missing)*L*0.5*(R()<.5?1:-1)});
+        // 갈고리 끝에서 직각으로 꺾여 나가는 짧은 벽
+        if(hook&&missing===1){
+          const ls=step*(1+R()*2.2), endA=spin*(L/2-tr/2), out=side*(sj+ls/2-tr/2);
+          push(ring,{k:k+kBase,j:j+0.8,alongX:!alongX,L:ls,t:tr,h:hj,hb:hw,
+            cx:alongX?endA+hook*0.5*spin:out, cz:alongX?out:endA+hook*0.5*spin, dir:side,off:0});
+        }
       }
       // 디딤판: 안쪽 층 테두리와 이 층 테두리 사이
       if(k>1){
-        const sm=s-step*0.5, w=step-tr*0.6;
+        const sm=sj-step*0.5, w=step-tr*0.6;
         const Lt=alongX?2*sm+w:Math.max(w,2*sm-w);
-        const tb=lerp(treadH,Math.max(treadH,h-rise*0.65-base),fill);
-        push(ring,{k:k+kBase,j:j+0.5,alongX,L:Lt,t:w,h:h-rise*0.65,hb:tb,
+        const tb=lerp(treadH,Math.max(treadH,hj-rise*0.65-base),fill);
+        push(ring,{k:k+kBase,j:j+0.5,alongX,L:Lt,t:w,h:hj-rise*0.65,hb:tb,
           cx:alongX?0:side*sm, cz:alongX?side*sm:0,dir:spin*(j<2?1:-1),off:0});
       }
     }
-    parent.add(ring); last={s,h,ring};
+    parent.add(ring); rings.push({k,s,h,ring});
   }
+  const last=rings[rings.length-1];
+  last.rings=rings;
   return last;
 }
 
@@ -480,12 +506,26 @@ function makeCrystal(R,o){
     addRings(sg,bars,R,{N:n,step:sh.step*0.8,rise:rise*0.85,fill:0,irr:sh.irr,kBase:kb,twistMul:2});
     g.add(sg); kMax=Math.max(kMax,kb+n);
   }
+  // 4) 곁결정: 바깥쪽 계단 테두리 위에 작은 ㄹ자 결정이 거듭 돋아남 (결정 방향은 거의 같음)
+  const nMini=Math.min(7,Math.round(meanderU*6*Math.min(1,o.N/18)));
+  const cand=last.rings.filter(r=>r.k>=o.N*0.45&&r.k<=o.N*0.95);
+  for(let m=0;m<nMini&&cand.length;m++){
+    const r=cand[Math.floor(R()*cand.length)];
+    const j=Math.floor(R()*4), t=(R()*1.4-0.7)*r.s;
+    const pt=[[t,-r.s],[r.s,t],[t,r.s],[-r.s,t]][j];
+    const mg=new THREE.Group();
+    mg.position.set(pt[0],r.h,pt[1]).applyEuler(r.ring.rotation).add(r.ring.position);
+    mg.rotation.y=r.ring.rotation.y+(R()-.5)*0.25;
+    const n=4+Math.floor(R()*5), kb=r.k;
+    addRings(mg,bars,R,{N:n,step:sh.step*0.75,rise:rise*0.85,fill:sh.fill*0.5,irr:sh.irr,kBase:kb});
+    g.add(mg); kMax=Math.max(kMax,kb+n);
+  }
   g.position.set(o.x,o.dep||0,o.z);
   const ta=R()*6.28; g.quaternion.setFromAxisAngle(new THREE.Vector3(Math.cos(ta),0,Math.sin(ta)),o.tilt);
   g.rotateY(R()*1.57);
   world.add(g);
   const rimH=rise*2.2+0.012;
-  return {g,bars,N:kMax,delay:o.delay,dep:o.dep||0,top:o.N*rise*1.12+(o.dep||0)+(sh.sprouts?rise*8:0),bot:rise-rimH*1.15};
+  return {g,bars,N:kMax,delay:o.delay,dep:o.dep||0,top:o.N*rise*1.12+(o.dep||0)+((sh.sprouts||nMini)?rise*8:0),bot:rise-rimH*1.15};
 }
 
 function buildFromSeeds(){
@@ -692,6 +732,11 @@ function newRound(){
   T=0.04; waitingSeeds=true; lastPhase=-1; setPlay(true);
 }
 $('regrow').onclick=()=>{ newRound(); toast('쇳물을 다시 녹였어요.<br>씨앗을 심어 보세요.'); };
+const meaName=u=>u<0.2?'적게':u<0.45?'조금':u<0.7?'보통':'많이';
+$('mea').addEventListener('input',()=>{
+  meanderU=$('mea').value/100; $('meaname').textContent=meaName(meanderU);
+  buildFromSeeds();
+});
 const coolEl=$('cool');
 coolEl.addEventListener('input',()=>{
   const prev=coolName(coolU); coolU=coolEl.value/100;
@@ -952,7 +997,7 @@ function recDraw(){ if(rec) composite(1080,1920); }
 // 내 결정 링크: 씨앗 자리·깊이 + 식히기 + 결정 모양의 바탕 수 를 주소에 담음
 function recipe(){
   const sd=seeds.map(s=>[Math.round(s.x*100),Math.round(s.z*100),Math.round(s.dep/0.2)].join('_')).join('.');
-  return `${crystalSeed.toString(36)}~${Math.round(coolU*100)}~${sd}`;
+  return `${crystalSeed.toString(36)}~${Math.round(coolU*100)}~${sd}~${Math.round(meanderU*100)}`;
 }
 $('link').onclick=async()=>{
   if(!seeds.length){ ensureSeeds(); }
@@ -970,7 +1015,8 @@ $('link').onclick=async()=>{
 function loadRecipe(){
   const c=new URLSearchParams(location.search).get('c'); if(!c) return false;
   try{
-    const [sd,cv,list]=c.split('~');
+    const [sd,cv,list,mv]=c.split('~');
+    if(mv!==undefined){ meanderU=clamp((+mv)/100); $('mea').value=Math.round(meanderU*100); $('meaname').textContent=meaName(meanderU); }
     crystalSeed=parseInt(sd,36)||crystalSeed;
     coolU=clamp((+cv||45)/100); $('cool').value=Math.round(coolU*100); $('coolname').textContent=coolName(coolU);
     clearSeeds();
