@@ -78,7 +78,10 @@
   #depth .row.note{justify-content:center;font-size:12px;font-weight:600;color:#ffd9a8;padding-bottom:2px}
   #depth span{color:var(--dim);margin-right:2px;min-width:52px}
   #depth small{font-size:10.5px;color:var(--dim)}
-  #cool{width:120px;height:26px}
+  #cool,#dep{width:120px;height:26px}
+  #depth b{font-size:11.5px;color:#ffd9a8;min-width:24px;text-align:right}
+  #dep::-webkit-slider-runnable-track{background:linear-gradient(90deg,#f3e6dc,#c4703a)}
+  #dep::-moz-range-track{background:linear-gradient(90deg,#f3e6dc,#c4703a)}
   #cool::-webkit-slider-runnable-track{background:linear-gradient(90deg,#ffb070,#d9c9e8,#7fb3ff)}
   #cool::-moz-range-track{background:linear-gradient(90deg,#ffb070,#d9c9e8,#7fb3ff)}
   #depth button{border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--ink);font:inherit;font-size:12px;
@@ -125,8 +128,8 @@
 </div>
 
 <div id="depth">
-  <div class="row"><span>심는 깊이</span><button data-d="0" class="on">표면</button><button data-d="0.6">중간</button><button data-d="1.2">깊게</button></div>
-  <div class="row"><span>식히기</span><small>천천히</small><input type="range" id="cool" min="0" max="100" value="45" aria-label="식히는 빠르기"><small>빠르게</small></div>
+  <div class="row"><span>심는 깊이</span><small>표면</small><input type="range" id="dep" min="0" max="7" step="1" value="0" aria-label="심는 깊이"><small>깊이</small><b id="depname">1단</b></div>
+  <div class="row"><span>식히기</span><small>천천히</small><input type="range" id="cool" min="0" max="100" value="45" aria-label="식히는 빠르기"><small>빠르게</small><b style="visibility:hidden">1단</b></div>
   <div class="row note" id="coolname">계단 결정</div>
 </div>
 <div id="caption"></div>
@@ -178,7 +181,8 @@
     ‘기울이기’를 켜면 폰 각도에 따라<br>결정이 돌고 무지갯빛도 바뀌어요.<br>
     아래 막대를 끌면 시간을 앞뒤로 옮길 수 있어요.<br>
     ‘새로 심기’를 누르고 쇳물을 톡 누르면<br>그 자리에 씨앗이 심어져요.<br>
-    위쪽에서 ‘표면·중간·깊게’를 고르면<br>쇳물 속 그 깊이에 철사로 매달아 심어요.<br>
+    위쪽 ‘심는 깊이’를 1~8단으로 고르면<br>쇳물 속 그 깊이에 철사로 매달아 심어요.<br>
+    여러 깊이에 섞어 심으면<br>결정이 층층이 겹쳐 자라요.<br>
     씨앗끼리 가까우면 결정이 작게, 멀면 크게 자라요.<br>
     (자라는 모습이 보이도록<br>쇳물을 반투명하게 그렸어요.)</p></div>
 </div>
@@ -232,7 +236,7 @@ const pmrem=new THREE.PMREMGenerator(renderer);
 scene.environment=pmrem.fromScene(new RoomEnvironment(renderer),0.03).texture;
 
 const camera=new THREE.PerspectiveCamera(36,1,0.05,100);
-camera.position.set(4.6,3.2,7.6);
+camera.position.set(3.5,2.5,5.8);
 const controls=new OrbitControls(camera,canvas);
 controls.target.set(0,-0.6,0);
 controls.enableDamping=true; controls.dampingFactor=0.07;
@@ -261,7 +265,7 @@ crystalMat.onBeforeCompile=sh=>{
   Object.assign(sh.uniforms,oxU);
   sh.vertexShader=sh.vertexShader
     .replace('#include <common>','#include <common>\nuniform mat4 uWorldInv;\nvarying vec3 vOx;')
-    .replace('#include <project_vertex>','#include <project_vertex>\nvOx=(uWorldInv*modelMatrix*vec4(transformed,1.0)).xyz;');
+    .replace('#include <project_vertex>','#include <project_vertex>\nvec4 oxp=vec4(transformed,1.0);\n#ifdef USE_INSTANCING\n oxp=instanceMatrix*oxp;\n#endif\nvOx=(uWorldInv*modelMatrix*oxp).xyz;');
   sh.fragmentShader=sh.fragmentShader
     .replace('#include <common>',`#include <common>
 varying vec3 vOx;
@@ -338,36 +342,63 @@ let coolU=0.45;
 function shapeOf(u){
   const irr=smooth(0.55,1,u);
   return {
-    step:lerp(0.075,0.13,u),
-    rise:lerp(0.035,0.13,smooth(0,0.6,u)),
+    step:lerp(0.042,0.07,u),
+    rise:lerp(0.02,0.088,smooth(0,0.6,u)),
     fill:1-smooth(0.05,0.42,u),
-    irr, sprouts:Math.round(4*smooth(0.62,1,u))
+    irr, sprouts:Math.round(4*smooth(0.3,0.9,u))
   };
 }
 function coolName(u){ return u<0.2?'꽉 찬 결정':u<0.62?'계단 결정':'뼈대 결정'; }
 
+/* 한 층 = 가는 테두리 벽 4개 + 그 안쪽 디딤판 4개.
+   테두리가 디딤판보다 솟아 있어 층마다 가는 홈이 생긴다(레고 블록처럼 보이지 않게).
+   조각이 많아서 InstancedMesh 하나로 한꺼번에 그린다. */
+const MAXBARS=9000;
+const inst=new THREE.InstancedMesh(BOX,crystalMat,MAXBARS);
+inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+inst.frustumCulled=false; inst.count=0; world.add(inst);
+const ZERO=new THREE.Matrix4().makeScale(0,0,0);
+let allBars=[], growRate=30, lastG=-1;
+
 function addRings(parent,bars,R,{N,step,rise,fill,irr,kBase=0,twistMul=1}){
-  const t=step*1.05, wallH=rise*2.6+0.02;
-  const twist=(R()<.5?-1:1)*(0.01+R()*0.02)*(1+irr*1.5)*twistMul;
-  const drift=step*(0.04+R()*0.07)*(1+irr), driftA=R()*6.28;
-  const base=rise-wallH;
+  const tr=step*0.5, rimH=rise*2.2+0.012, treadH=rise*0.55+0.006;
+  const twist=(R()<.5?-1:1)*(0.004+R()*0.008)*(1+irr*1.5)*twistMul;
+  const drift=step*(0.03+R()*0.05)*(1+irr), driftA=R()*6.28;
+  const base=rise-rimH;
   let last=null;
+  const push=(ring,o)=>{ const d=new THREE.Object3D(); ring.add(d); o.d=d; bars.push(o); };
   for(let k=1;k<=N;k++){
     const ring=new THREE.Group();
     ring.rotation.y=k*twist;
-    ring.position.set(Math.cos(driftA+k*0.35)*drift*k*0.25,0,Math.sin(driftA+k*0.35)*drift*k*0.25);
-    const s=k*step, h=k*rise+(R()-.5)*rise*0.25*(1+2*irr);
+    ring.position.set(Math.cos(driftA+k*0.3)*drift*k*0.2,0,Math.sin(driftA+k*0.3)*drift*k*0.2);
+    const s=k*step, h=k*rise+(R()-.5)*rise*0.2*(1+2*irr);
     const spin=R()<.5?1:-1;
     for(let j=0;j<4;j++){
       const alongX=j%2===0;
-      const L=alongX?2*s+t:Math.max(t,2*s-t);
-      const missing=k>3&&R()<0.05+0.3*irr?0.5+R()*0.4:1;
-      const m=new THREE.Mesh(BOX,crystalMat); m.visible=false; ring.add(m);
-      const hw=wallH*(0.85+R()*0.3);
-      const hb=lerp(hw,Math.max(hw,h-base),fill);   // 채워질수록 벽이 바닥까지 내려감
-      bars.push({m,k:k+kBase,j,alongX,L:L*missing,t,h,hb,
-        cx:alongX?0:(j===1?s:-s), cz:alongX?(j===0?-s:s):0,
+      // 모서리를 지나 삐죽 나가는 갈고리(사진의 꺾쇠 무늬)
+      const hook=(k>2&&R()<0.22+0.25*irr)?step*(1.2+R()*2.6):0;
+      const L=(alongX?2*s+tr:Math.max(tr,2*s-tr))+hook;
+      const missing=k>3&&R()<0.03+0.25*irr?0.45+R()*0.45:1;
+      const hw=rimH*(0.9+R()*0.2);
+      const hb=lerp(hw,Math.max(hw,h-base),fill);
+      const side=(j===0||j===3)?-1:1;
+      push(ring,{k:k+kBase,j,alongX,L:L*missing,t:tr,h,hb,
+        cx:alongX?hook*0.5*spin:side*s, cz:alongX?side*s:hook*0.5*spin,
         dir:spin*(j<2?1:-1), off:(1-missing)*L*0.5*(R()<.5?1:-1)});
+      // 갈고리 끝에서 직각으로 꺾여 나가는 짧은 벽 → 꺾쇠(번개무늬)
+      if(hook&&missing===1){
+        const ls=step*(1+R()*2.2), endA=spin*(L/2-tr/2), out=side*(s+ls/2-tr/2);
+        push(ring,{k:k+kBase,j:j+0.8,alongX:!alongX,L:ls,t:tr,h,hb:hw,
+          cx:alongX?endA+hook*0.5*spin:out, cz:alongX?out:endA+hook*0.5*spin, dir:side,off:0});
+      }
+      // 디딤판: 안쪽 층 테두리와 이 층 테두리 사이
+      if(k>1){
+        const sm=s-step*0.5, w=step-tr*0.6;
+        const Lt=alongX?2*sm+w:Math.max(w,2*sm-w);
+        const tb=lerp(treadH,Math.max(treadH,h-rise*0.65-base),fill);
+        push(ring,{k:k+kBase,j:j+0.5,alongX,L:Lt,t:w,h:h-rise*0.65,hb:tb,
+          cx:alongX?0:side*sm, cz:alongX?side*sm:0,dir:spin*(j<2?1:-1),off:0});
+      }
     }
     parent.add(ring); last={s,h,ring};
   }
@@ -384,25 +415,26 @@ function makeCrystal(R,o){
   const corners=[[1,1],[1,-1],[-1,1],[-1,-1]].sort(()=>R()-.5).slice(0,sh.sprouts);
   for(const [cx,cz] of corners){
     const sg=new THREE.Group();
-    const p=new THREE.Vector3(cx*last.s*0.9,last.h-rise*1.2,cz*last.s*0.9).applyEuler(last.ring.rotation).add(last.ring.position);
+    const p=new THREE.Vector3(cx*last.s*0.9,last.h-rise*1.5,cz*last.s*0.9).applyEuler(last.ring.rotation).add(last.ring.position);
     sg.position.copy(p);
     const out=new THREE.Vector3(cx,0,cz).normalize();
     sg.quaternion.setFromAxisAngle(new THREE.Vector3(out.z,0,-out.x),0.3+R()*0.25);
     sg.rotateY(R()*1.57);
-    const n=3+Math.floor(R()*(2+sh.irr*3)), kb=o.N-2;
-    addRings(sg,bars,R,{N:n,step:sh.step*0.75,rise:rise*0.8,fill:0,irr:sh.irr,kBase:kb,twistMul:2});
+    const n=6+Math.floor(R()*(4+sh.irr*6)), kb=o.N-4;
+    addRings(sg,bars,R,{N:n,step:sh.step*0.8,rise:rise*0.85,fill:0,irr:sh.irr,kBase:kb,twistMul:2});
     g.add(sg); kMax=Math.max(kMax,kb+n);
   }
   g.position.set(o.x,o.dep||0,o.z);
   const ta=R()*6.28; g.quaternion.setFromAxisAngle(new THREE.Vector3(Math.cos(ta),0,Math.sin(ta)),o.tilt);
   g.rotateY(R()*1.57);
   world.add(g);
-  return {g,bars,N:kMax,delay:o.delay,dep:o.dep||0,top:o.N*rise*1.15+(o.dep||0)+(sh.sprouts?rise*4:0),bot:rise-(rise*2.6+0.02)*1.15};
+  const rimH=rise*2.2+0.012;
+  return {g,bars,N:kMax,delay:o.delay,dep:o.dep||0,top:o.N*rise*1.12+(o.dep||0)+(sh.sprouts?rise*8:0),bot:rise-rimH*1.15};
 }
 
 function buildFromSeeds(){
   for(const c of crystals) world.remove(c.g);
-  crystals=[];
+  crystals=[]; allBars=[]; lastG=-1;
   const R=rng(Math.floor(Math.random()*1e9));
   const sh=shapeOf(coolU);
   // 결정끼리 만나면 더 못 자라므로 이웃 씨앗과의 거리로 크기가 정해짐
@@ -411,10 +443,15 @@ function buildFromSeeds(){
     seeds.forEach((o,j)=>{ if(i!==j) md=Math.min(md,Math.hypot(s.x-o.x,s.z-o.z,(s.dep-o.dep)*0.8)); });
     const edge=3.0-Math.hypot(s.x,s.z);
     const lim=Math.min(md*0.62,edge+0.3,1.65)*(sh.sprouts?0.82:1);
-    const N=clamp(Math.floor(lim/sh.step),3,22);
+    const N=clamp(Math.floor(lim/sh.step),5,38);
     // pivot이 x축으로 뒤집혀 있으므로 z 부호를 바꿔야 씨앗 자리에 맞음
     crystals.push(makeCrystal(R,{N,x:s.x,z:-s.z,dep:s.dep,tilt:i===0?0:R()*0.12,delay:i*0.05}));
   });
+  for(const c of crystals) for(const b of c.bars){ if(allBars.length<MAXBARS) allBars.push(b); }
+  inst.count=allBars.length;
+  // 모든 결정이 같은 빠르기로 자라되, 가장 큰 결정도 시간 안에 다 자라도록
+  growRate=24;
+  for(const c of crystals) growRate=Math.max(growRate,(c.N+2)/(0.96-c.delay));
   let mx=0.4, mn=0;
   for(const c of crystals){ mx=Math.max(mx,c.top); mn=Math.min(mn,c.bot); }
   yMid=(mx+mn)/2; half=Math.max(0.3,(mx-mn)/2);
@@ -425,20 +462,31 @@ function buildFromSeeds(){
   }
 }
 
+const relM=new THREE.Matrix4(), worldInvM=new THREE.Matrix4();
 function updateGrowth(g){
+  if(Math.abs(g-lastG)<1e-5) return; lastG=g;
   for(const c of crystals){
-    const front=(g-c.delay)*36;
+    const front=(g-c.delay)*growRate;
     for(const b of c.bars){
       const pr=clamp(front-b.k+1);
       const pb=smooth(0,1,clamp(pr*1.7-b.j*0.18));
-      if(pb<=0.001){b.m.visible=false;continue;}
-      b.m.visible=true;
+      b.vis=pb>0.001; if(!b.vis) continue;
       const len=Math.max(0.001,b.L*pb), hh=b.hb*(0.25+0.75*pb), y=b.h-hh/2;
       const shift=(b.L-len)/2*b.dir+b.off*pb;
-      if(b.alongX){ b.m.scale.set(len,hh,b.t); b.m.position.set(b.cx+shift,y,b.cz); }
-      else       { b.m.scale.set(b.t,hh,len); b.m.position.set(b.cx,y,b.cz+shift); }
+      if(b.alongX){ b.d.scale.set(len,hh,b.t); b.d.position.set(b.cx+shift,y,b.cz); }
+      else       { b.d.scale.set(b.t,hh,len); b.d.position.set(b.cx,y,b.cz+shift); }
     }
   }
+  // world 기준 행렬로 옮겨 담기
+  world.updateMatrixWorld(true);
+  worldInvM.copy(world.matrixWorld).invert();
+  for(let i=0;i<allBars.length;i++){
+    const b=allBars[i];
+    if(!b.vis){ inst.setMatrixAt(i,ZERO); continue; }
+    relM.multiplyMatrices(worldInvM,b.d.matrixWorld);
+    inst.setMatrixAt(i,relM);
+  }
+  inst.instanceMatrix.needsUpdate=true;
 }
 
 /* ---------- 시간표 ----------
@@ -571,10 +619,11 @@ coolEl.addEventListener('input',()=>{
     toast(tip);
   }
 });
-document.querySelectorAll('#depth button').forEach(b=>b.onclick=()=>{
-  plantDepth=+b.dataset.d;
-  document.querySelectorAll('#depth button').forEach(x=>x.classList.toggle('on',x===b));
-  if(plantDepth>0) toast('쇳물 속 고리가 보이는 깊이에<br>씨앗이 철사에 매달려 심어져요.');
+let depTold=false;
+$('dep').addEventListener('input',()=>{
+  const v=+$('dep').value; plantDepth=v*0.2;
+  $('depname').textContent=(v+1)+'단';
+  if(v>0&&!depTold){ depTold=true; toast('쇳물 속 고리가 보이는 깊이에<br>씨앗이 철사에 매달려 심어져요.'); }
 });
 $('info').onclick=()=>$('drawer').classList.add('open');
 $('close').onclick=()=>$('drawer').classList.remove('open');
@@ -647,7 +696,7 @@ function resize(){
   camera.updateProjectionMatrix();
 }
 addEventListener('resize',resize); resize();
-if(innerWidth/innerHeight<0.8){ camera.position.sub(controls.target).multiplyScalar(innerWidth/innerHeight<0.6?1.4:1.2).add(controls.target); }
+if(innerWidth/innerHeight<0.8){ camera.position.sub(controls.target).multiplyScalar(innerWidth/innerHeight<0.6?1.3:1.12).add(controls.target); }
 
 /* ---------- 시작 ---------- */
 buildFromSeeds(); waitingSeeds=true; setPlay(true);
