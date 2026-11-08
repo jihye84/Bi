@@ -208,7 +208,7 @@
     ㄴ: 두 변만 자란 꺾쇠 계단<br>
     ㄹ: 테두리가 두 번 꺾인 ㄹ자 계단<br>
     回: 끊긴 자리가 돌며 감기는 네모 나선<br>
-    말림: 테두리 끝이 안쪽으로 말려 든 갈고리<br>
+    말림: 한 줄 테두리가 처음부터 끝까지<br>안쪽으로 말려 내려가는 계단<br>
     섞기: 큰 결정, 가지, 곁결정이<br>저마다 다른 무늬로 자라요.</p></div>
   <div class="card"><b>실제로는 이렇게 만들어요</b>
     <p>비스무트는 약 271 °C에서 녹아요.<br>
@@ -585,8 +585,8 @@ function addRings(parent,bars,R,{N,step,rise,fill,irr,kBase=0,twistMul=1,treads=
     // ㄹ은 아래에서 따로 처리
     prevDrop=gapSide>=0?gapSide:-1;
     const drop=-1;
-    if((mode==='말림'||mode==='ㄹ')&&k>N-2){
-      const PATH=mode==='ㄹ'?RIEUL_PATH:KEY_PATH;
+    if(mode==='ㄹ'&&k>N-2){
+      const PATH=RIEUL_PATH;
       // 같은 갈고리 모양이 한 층씩 작아지며 겹겹이 내려가는 계단
       const hw=rimH*(0.9+R()*0.2), hb=lerp(hw,Math.max(hw,h-base),fill*0.5);
       for(let i=0;i<PATH.length-1;i++){
@@ -680,12 +680,53 @@ function addRings(parent,bars,R,{N,step,rise,fill,irr,kBase=0,twistMul=1,treads=
   return last;
 }
 
+
+/* 말림: 처음부터 끝까지 한 줄 테두리가 바깥에서 안쪽으로 돌돌 말려 들어가는 계단.
+   한 바퀴 돌 때마다 한 칸씩 안으로 들어가고 한 층씩 낮아져, 가운데에서 갈고리처럼 말려 끝남 */
+function addSpiral(parent,bars,R,{N,step,rise,fill=0,kBase=0}){
+  N=Math.max(3,N);
+  const tr=step*0.5, g=step*2.3, S=N*step, rimH=rise*2.2+0.012, base=rise-rimH;
+  const flip=R()<.5?1:-1;
+  const ring=new THREE.Group(); parent.add(ring);
+  const DIR=[[0,-1],[-1,0],[0,1],[1,0]];
+  const segs=[]; let x=S, z=0.05*S, i=0, total=0;
+  while(true){
+    const L=i===0?S*1.05:2*S-Math.floor((i-1)/2)*g;
+    if(L<g*1.3) break;
+    const [dx,dz]=DIR[i%4];
+    segs.push({x0:x,z0:z,x1:x+dx*L,z1:z+dz*L,L,i,n:DIR[(i+1)%4],t0:total});
+    x+=dx*L; z+=dz*L; total+=L; i++;
+  }
+  const rings=[];
+  for(const sg of segs){
+    const pm=(sg.t0+sg.L/2)/total;                 // 0 바깥 → 1 안쪽
+    const lvl=Math.max(1,N*(1-pm));
+    const h=rise*(1+lvl), k=Math.max(1,Math.round(lvl));
+    const horiz=Math.abs(sg.z1-sg.z0)<1e-6;
+    const hw=rimH*(0.92+R()*0.16), hb=lerp(hw,Math.max(hw,h-base),fill);
+    const cx=flip*(sg.x0+sg.x1)/2, cz=(sg.z0+sg.z1)/2;
+    const dir=horiz?Math.sign(flip*(sg.x1-sg.x0)):Math.sign(sg.z1-sg.z0);
+    const push=o=>{ const d=new THREE.Object3D(); ring.add(d); o.d=d; bars.push(o); };
+    push({k:k+kBase,j:0,alongX:horiz,L:sg.L+tr,t:tr,h,hb,cx,cz,dir,off:0});
+    // 안쪽 디딤판 (한 칸 아래로 내려가는 계단 면)
+    const w=g-tr*0.6, th=rise*0.55+0.006;
+    push({k:k+kBase,j:0.5,alongX:horiz,L:Math.max(tr,sg.L-g),t:w,h:h-rise*0.65,hb:lerp(th,Math.max(th,h-rise*0.65-base),fill),
+      cx:cx+flip*sg.n[0]*g*0.5, cz:cz+sg.n[1]*g*0.5, dir, off:0});
+    if(!rings.length||rings[rings.length-1].k!==k) rings.push({k,s:Math.max(step,S*(1-pm)),h,ring});
+  }
+  rings.sort((a,b)=>a.k-b.k);
+  const last=rings[rings.length-1]; last.rings=rings;
+  return last;
+}
+
 function makeCrystal(R,o){
   const g=new THREE.Group(); const bars=[];
   const sh=shapeOf(coolU);
   const rise=sh.rise*(0.9+R()*0.2);
   const mMain=pickPat(R), wide=1;
-  const last=addRings(g,bars,R,{N:Math.max(4,Math.round(o.N/wide)),step:sh.step*wide,rise,fill:sh.fill,irr:sh.irr,mode:mMain});
+  const last=mMain==='말림'
+    ?addSpiral(g,bars,R,{N:o.N,step:sh.step,rise,fill:sh.fill*0.5})
+    :addRings(g,bars,R,{N:Math.max(4,Math.round(o.N/wide)),step:sh.step*wide,rise,fill:sh.fill,irr:sh.irr,mode:mMain});
   let kMax=o.N;
   // 뼈대 결정: 바깥 모서리에서 작은 결정이 비스듬히 돋아남
   const corners=[[1,1],[1,-1],[-1,1],[-1,-1]].sort(()=>R()-.5).concat([[1,0],[0,1],[-1,0],[0,-1]].sort(()=>R()-.5)).slice(0,sh.sprouts);
@@ -713,7 +754,9 @@ function makeCrystal(R,o){
     const n=3+Math.floor(R()*4), kb=r.k;
     const sc=0.55+R()*0.35;
     const mm=pickPat(R), w2=1;
-    if(mm==='말림'||mm==='ㄹ'){
+    if(mm==='말림'){
+      addSpiral(mg,bars,R,{N:4+Math.floor(R()*4),step:sh.step*sc,rise:rise*0.8,kBase:kb});
+    } else if(mm==='ㄹ'){
       const sz=3+Math.floor(R()*3);
       addRings(mg,bars,R,{N:1,step:sh.step*sc*sz,rise:rise*1.6,fill:0,irr:0,kBase:kb,treads:false,mode:mm,trMul:1/sz});
       // 갈고리 안쪽에 낮은 계단 몇 겹
@@ -946,7 +989,7 @@ const PAT_TIP={mix:'결정마다 무늬가 제각각 섞여요.',
   'ㅁ':'닫힌 네모 계단이<br>따글따글 많이 돋아요.','ㄷ':'한쪽이 열린 ㄷ자가<br>겹겹이 포개져요.',
   'ㄹ':'테두리가 두 번 꺾여<br>ㄹ자로 굽이쳐요.','ㄴ':'두 변만 자란 ㄴ자가<br>꺾쇠처럼 겹쳐요.',
   '回':'끊긴 틈이 한 바퀴씩 돌아가며<br>네모 나선으로 감겨요.',
-  '말림':'테두리 끝이 안쪽으로<br>돌돌 말려 들어가요.'};
+  '말림':'테두리 한 줄이 처음부터<br>안쪽으로 돌돌 말려 내려가요.'};
 document.querySelectorAll('#pats button').forEach(b=>b.onclick=()=>{
   patMode=b.dataset.p;
   document.querySelectorAll('#pats button').forEach(x=>x.classList.toggle('on',x===b));
