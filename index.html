@@ -350,14 +350,6 @@ float oxThick(vec3 p){
     vec3 grad=sign(det)*(dFdx(hgt)*r1+dFdy(hgt)*r2);
     normal=normalize(abs(det)*normal-grad);
   }`)
-    .replace('#include <lights_fragment_end>',`#include <lights_fragment_end>
-  {
-    float rr=9.0; for(int i=0;i<${MAXSEEDS};i++){ rr=min(rr,length(vOx.xz-uSeeds[i].xz)); }
-    float w=rr*1.15-vOx.y*0.5+0.12*fbm(vOx*3.0+uOff);
-    float band=pow(max(0.0,sin((w-uTime*0.32)*2.6)),18.0)*smoothstep(10.0,60.0,uD);
-    reflectedLight.indirectSpecular*=1.0+2.2*band;
-    reflectedLight.directSpecular*=1.0+1.2*band;
-  }`)
     .replace('#include <lights_physical_fragment>',`#include <lights_physical_fragment>
 #ifdef USE_IRIDESCENCE
   material.iridescenceThickness = oxThick(vOx);
