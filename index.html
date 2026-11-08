@@ -71,17 +71,23 @@
   .film i{flex:1}
   .film-l{display:flex;justify-content:space-between;font-size:10px;color:var(--dim);margin-top:3px}
 
-  #depth{position:fixed;top:calc(var(--sat) + 78px);left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:6px;
-    background:var(--glass);border:1px solid var(--line);border-radius:14px;padding:5px 6px 5px 12px;backdrop-filter:blur(10px);
+  #depth{position:fixed;top:calc(var(--sat) + 78px);left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:4px;
+    background:var(--glass);border:1px solid var(--line);border-radius:14px;padding:6px 10px 4px 12px;backdrop-filter:blur(10px);
     -webkit-backdrop-filter:blur(10px);transition:opacity .5s;font-size:12px;white-space:nowrap}
-  #depth span{color:var(--dim);margin-right:2px}
+  #depth .row{display:flex;align-items:center;gap:6px}
+  #depth .row.note{justify-content:center;font-size:12px;font-weight:600;color:#ffd9a8;padding-bottom:2px}
+  #depth span{color:var(--dim);margin-right:2px;min-width:52px}
+  #depth small{font-size:10.5px;color:var(--dim)}
+  #cool{width:120px;height:26px}
+  #cool::-webkit-slider-runnable-track{background:linear-gradient(90deg,#ffb070,#d9c9e8,#7fb3ff)}
+  #cool::-moz-range-track{background:linear-gradient(90deg,#ffb070,#d9c9e8,#7fb3ff)}
   #depth button{border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--ink);font:inherit;font-size:12px;
     border-radius:10px;padding:6px 11px;cursor:pointer}
   #depth button.on{background:rgba(255,214,160,.25);border-color:rgba(255,214,160,.55);font-weight:600}
   #depth.off{opacity:0;pointer-events:none}
-  #toast{position:fixed;top:calc(var(--sat) + 128px);left:50%;transform:translateX(-50%);background:var(--glass);
+  #toast{position:fixed;top:calc(var(--sat) + 196px);left:50%;transform:translateX(-50%);background:var(--glass);
     border:1px solid var(--line);border-radius:12px;padding:9px 14px;font-size:12.5px;opacity:0;transition:opacity .4s;
-    pointer-events:none;text-align:center;line-height:1.5;backdrop-filter:blur(10px)}
+    pointer-events:none;text-align:center;line-height:1.5;backdrop-filter:blur(10px);white-space:nowrap}
   #loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;font-family:'Noto Serif KR';
     color:var(--dim);font-size:14px;letter-spacing:.1em;transition:opacity .8s;pointer-events:none}
 
@@ -118,7 +124,11 @@
   </div>
 </div>
 
-<div id="depth"><span>심는 깊이</span><button data-d="0" class="on">표면</button><button data-d="0.6">중간</button><button data-d="1.2">깊게</button></div>
+<div id="depth">
+  <div class="row"><span>심는 깊이</span><button data-d="0" class="on">표면</button><button data-d="0.6">중간</button><button data-d="1.2">깊게</button></div>
+  <div class="row"><span>식히기</span><small>천천히</small><input type="range" id="cool" min="0" max="100" value="45" aria-label="식히는 빠르기"><small>빠르게</small></div>
+  <div class="row note" id="coolname">계단 결정</div>
+</div>
 <div id="caption"></div>
 
 <div class="dock">
@@ -151,6 +161,12 @@
     비눗방울이 무지갯빛인 것과 같은 원리예요.</p>
     <div class="film"><i style="background:#cfcbd2"></i><i style="background:#e7c45a"></i><i style="background:#c97a3a"></i><i style="background:#b04f9c"></i><i style="background:#5560d8"></i><i style="background:#3d9fd0"></i><i style="background:#43b98c"></i><i style="background:#e3c66a"></i></div>
     <div class="film-l"><span>막이 얇을 때</span><span>두꺼워질수록 →</span></div></div>
+  <div class="card"><b>식히기와 계단 모양</b>
+    <p>녹는점보다 얼마나 차갑게 식히느냐에 따라<br>모서리가 앞서 자라는 정도가 달라져요.<br>
+    살짝 식히면 가운데까지 채워지고,<br>알맞게 식히면 움푹한 계단이 생기고,<br>
+    많이 식히면 곁가지가 돋은 뼈대 결정이 돼요.<br>
+    다만 몇 도에서 계단이 몇 mm가 되는지는<br>아직 정확히 밝혀지지 않아서<br>
+    이 앱은 모양이 바뀌는 방향만 보여 줘요.</p></div>
   <div class="card"><b>실제로는 이렇게 만들어요</b>
     <p>비스무트는 약 271 °C에서 녹아요.<br>
     쇳물이 식으면 표면에 붙은 씨앗에서<br>결정이 쇳물 속으로 자라 내려가요.<br>
@@ -312,56 +328,95 @@ const world=new THREE.Group(); pivot.add(world);
 let crystals=[], half=0.8, yMid=0.6;
 
 function rng(seed){let a=seed>>>0;return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
-const STEP=0.1, RISE=0.11;
+// 식히기(과냉각) 정도 coolU: 0 = 녹는점 바로 아래에서 천천히, 1 = 한참 아래로 빠르게
+// 모서리가 면 가운데보다 얼마나 앞서 자라는지가 달라져 모양이 바뀐다:
+//   조금 차갑게 → 가운데가 거의 채워진 '꽉 찬 결정'
+//   알맞게     → 움푹한 '계단 결정'(호퍼)
+//   많이 차갑게 → 모서리가 내달려 곁가지가 돋는 '뼈대 결정'
+// (정확한 온도-모양 수치는 알려진 자료가 없어 경향만 반영)
+let coolU=0.45;
+function shapeOf(u){
+  const irr=smooth(0.55,1,u);
+  return {
+    step:lerp(0.075,0.13,u),
+    rise:lerp(0.035,0.13,smooth(0,0.6,u)),
+    fill:1-smooth(0.05,0.42,u),
+    irr, sprouts:Math.round(4*smooth(0.62,1,u))
+  };
+}
+function coolName(u){ return u<0.2?'꽉 찬 결정':u<0.62?'계단 결정':'뼈대 결정'; }
 
-function makeCrystal(R,o){
-  const g=new THREE.Group(); const bars=[];
-  const {N}=o, step=STEP, rise=RISE*(0.9+R()*0.2);
-  const t=step*1.05, wallH=rise*2.6;
-  const twist=(R()<.5?-1:1)*(0.01+R()*0.02);
-  const drift=step*(0.04+R()*0.07), driftA=R()*6.28;
+function addRings(parent,bars,R,{N,step,rise,fill,irr,kBase=0,twistMul=1}){
+  const t=step*1.05, wallH=rise*2.6+0.02;
+  const twist=(R()<.5?-1:1)*(0.01+R()*0.02)*(1+irr*1.5)*twistMul;
+  const drift=step*(0.04+R()*0.07)*(1+irr), driftA=R()*6.28;
+  const base=rise-wallH;
+  let last=null;
   for(let k=1;k<=N;k++){
     const ring=new THREE.Group();
     ring.rotation.y=k*twist;
     ring.position.set(Math.cos(driftA+k*0.35)*drift*k*0.25,0,Math.sin(driftA+k*0.35)*drift*k*0.25);
-    const s=k*step, h=k*rise+(R()-.5)*rise*0.25;
+    const s=k*step, h=k*rise+(R()-.5)*rise*0.25*(1+2*irr);
     const spin=R()<.5?1:-1;
     for(let j=0;j<4;j++){
       const alongX=j%2===0;
       const L=alongX?2*s+t:Math.max(t,2*s-t);
-      const missing=k>3&&R()<0.1?0.6+R()*0.3:1;
+      const missing=k>3&&R()<0.05+0.3*irr?0.5+R()*0.4:1;
       const m=new THREE.Mesh(BOX,crystalMat); m.visible=false; ring.add(m);
-      const hb=wallH*(0.85+R()*0.3);
-      bars.push({m,k,j,alongX,L:L*missing,t,h,hb,
+      const hw=wallH*(0.85+R()*0.3);
+      const hb=lerp(hw,Math.max(hw,h-base),fill);   // 채워질수록 벽이 바닥까지 내려감
+      bars.push({m,k:k+kBase,j,alongX,L:L*missing,t,h,hb,
         cx:alongX?0:(j===1?s:-s), cz:alongX?(j===0?-s:s):0,
         dir:spin*(j<2?1:-1), off:(1-missing)*L*0.5*(R()<.5?1:-1)});
     }
-    g.add(ring);
+    parent.add(ring); last={s,h,ring};
+  }
+  return last;
+}
+
+function makeCrystal(R,o){
+  const g=new THREE.Group(); const bars=[];
+  const sh=shapeOf(coolU);
+  const rise=sh.rise*(0.9+R()*0.2);
+  const last=addRings(g,bars,R,{N:o.N,step:sh.step,rise,fill:sh.fill,irr:sh.irr});
+  let kMax=o.N;
+  // 뼈대 결정: 바깥 모서리에서 작은 결정이 비스듬히 돋아남
+  const corners=[[1,1],[1,-1],[-1,1],[-1,-1]].sort(()=>R()-.5).slice(0,sh.sprouts);
+  for(const [cx,cz] of corners){
+    const sg=new THREE.Group();
+    const p=new THREE.Vector3(cx*last.s*0.9,last.h-rise*1.2,cz*last.s*0.9).applyEuler(last.ring.rotation).add(last.ring.position);
+    sg.position.copy(p);
+    const out=new THREE.Vector3(cx,0,cz).normalize();
+    sg.quaternion.setFromAxisAngle(new THREE.Vector3(out.z,0,-out.x),0.3+R()*0.25);
+    sg.rotateY(R()*1.57);
+    const n=3+Math.floor(R()*(2+sh.irr*3)), kb=o.N-2;
+    addRings(sg,bars,R,{N:n,step:sh.step*0.75,rise:rise*0.8,fill:0,irr:sh.irr,kBase:kb,twistMul:2});
+    g.add(sg); kMax=Math.max(kMax,kb+n);
   }
   g.position.set(o.x,o.dep||0,o.z);
   const ta=R()*6.28; g.quaternion.setFromAxisAngle(new THREE.Vector3(Math.cos(ta),0,Math.sin(ta)),o.tilt);
   g.rotateY(R()*1.57);
   world.add(g);
-  return {g,bars,N,delay:o.delay,dep:o.dep||0};
+  return {g,bars,N:kMax,delay:o.delay,dep:o.dep||0,top:o.N*rise*1.15+(o.dep||0)+(sh.sprouts?rise*4:0),bot:rise-(rise*2.6+0.02)*1.15};
 }
 
 function buildFromSeeds(){
   for(const c of crystals) world.remove(c.g);
   crystals=[];
   const R=rng(Math.floor(Math.random()*1e9));
+  const sh=shapeOf(coolU);
   // 결정끼리 만나면 더 못 자라므로 이웃 씨앗과의 거리로 크기가 정해짐
   seeds.forEach((s,i)=>{
     let md=3.4;
     seeds.forEach((o,j)=>{ if(i!==j) md=Math.min(md,Math.hypot(s.x-o.x,s.z-o.z,(s.dep-o.dep)*0.8)); });
     const edge=3.0-Math.hypot(s.x,s.z);
-    const lim=Math.min(md*0.62,edge+0.3,1.65);
-    const N=clamp(Math.floor(lim/STEP),4,16);
+    const lim=Math.min(md*0.62,edge+0.3,1.65)*(sh.sprouts?0.82:1);
+    const N=clamp(Math.floor(lim/sh.step),3,22);
     // pivot이 x축으로 뒤집혀 있으므로 z 부호를 바꿔야 씨앗 자리에 맞음
     crystals.push(makeCrystal(R,{N,x:s.x,z:-s.z,dep:s.dep,tilt:i===0?0:R()*0.12,delay:i*0.05}));
   });
-  let mx=0;
-  for(const c of crystals) mx=Math.max(mx,c.N*RISE*1.1+c.dep);
-  const mn=RISE-RISE*2.6*1.15;
+  let mx=0.4, mn=0;
+  for(const c of crystals){ mx=Math.max(mx,c.top); mn=Math.min(mn,c.bot); }
   yMid=(mx+mn)/2; half=Math.max(0.3,(mx-mn)/2);
   world.position.y=-yMid;
   oxU.uOff.value.set(R()*50,R()*50,R()*50);
@@ -372,7 +427,7 @@ function buildFromSeeds(){
 
 function updateGrowth(g){
   for(const c of crystals){
-    const front=(g-c.delay)*24;
+    const front=(g-c.delay)*36;
     for(const b of c.bars){
       const pr=clamp(front-b.k+1);
       const pb=smooth(0,1,clamp(pr*1.7-b.j*0.18));
@@ -456,7 +511,7 @@ function apply(t){
   else temp=lerp(240,25,smooth(0.70,1,t));
   let r=`${temp.toFixed(1)} °C`;
   if(ph===0) r=`씨앗 ${seeds.length}/${MAXSEEDS} · ${r}`;
-  else if(ph===1) r=`결정 ${Math.round(g*100)}% · ${r}`;
+  else if(ph===1) r=`결정 ${Math.round(g*100)}% · ${coolName(coolU)}<br>녹는점(271.4 °C)보다 ${coolU<0.2?'살짝':coolU<0.62?'조금':'한참'} 아래`;
   else if(ph>=3){ const [n,c]=colorName(d); r=`<span id="swatch" style="background:${c};color:${c}"></span>${n} 즈음 · 산화막 약 ${Math.round(d)} nm<br>${r}`; }
   $('reading').innerHTML=r;
   document.querySelectorAll('#ticks span').forEach((s,i)=>s.classList.toggle('on',i===Math.min(ph,3)));
@@ -504,6 +559,18 @@ function newRound(){
   T=0.04; waitingSeeds=true; lastPhase=-1; setPlay(true);
 }
 $('regrow').onclick=()=>{ newRound(); toast('쇳물을 다시 녹였어요.<br>씨앗을 심어 보세요.'); };
+const coolEl=$('cool');
+coolEl.addEventListener('input',()=>{
+  const prev=coolName(coolU); coolU=coolEl.value/100;
+  $('coolname').textContent=coolName(coolU);
+  buildFromSeeds();
+  if(coolName(coolU)!==prev){
+    const tip={'꽉 찬 결정':'녹는점 바로 아래에서 천천히 식히면<br>가운데까지 채워진 결정이 돼요.',
+      '계단 결정':'알맞게 식히면 모서리가 앞서 자라<br>움푹한 계단이 생겨요.',
+      '뼈대 결정':'빠르게 식히면 모서리가 내달려<br>곁가지가 돋은 뼈대 결정이 돼요.'}[coolName(coolU)];
+    toast(tip);
+  }
+});
 document.querySelectorAll('#depth button').forEach(b=>b.onclick=()=>{
   plantDepth=+b.dataset.d;
   document.querySelectorAll('#depth button').forEach(x=>x.classList.toggle('on',x===b));
