@@ -48,7 +48,7 @@
   input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;margin-top:-7px;
     background:#fff;box-shadow:0 0 0 3px rgba(255,255,255,.18),0 2px 8px rgba(0,0,0,.5)}
   input[type=range]::-moz-range-thumb{width:18px;height:18px;border:none;border-radius:50%;background:#fff}
-  .btns{display:flex;gap:8px;margin-top:6px}
+  .btns{display:flex;gap:6px;margin-top:6px}
   .btns button{flex:1;min-width:0;height:44px;flex-direction:column;line-height:1.1;font-size:15px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.06);
     color:var(--ink);font:inherit;font-size:12.5px;cursor:pointer;white-space:nowrap;display:flex;align-items:center;justify-content:center;gap:5px}
   .btns button:active{background:rgba(255,255,255,.16)}
@@ -57,13 +57,13 @@
   @keyframes gl{50%{box-shadow:0 0 0 3px rgba(255,214,150,.35),0 0 18px rgba(255,190,120,.35)}}
   .btns button.main{flex:1.3;background:rgba(255,255,255,.14);font-weight:600}
 
-  #drawer{position:fixed;left:50%;bottom:0;transform:translate(-50%,105%);width:min(560px,100%);
+  #drawer,#share{position:fixed;left:50%;bottom:0;transform:translate(-50%,105%);width:min(560px,100%);
     max-height:calc(100% - var(--sat) - 40px);overflow:auto;background:rgba(18,14,24,.94);backdrop-filter:blur(18px);
     -webkit-backdrop-filter:blur(18px);border:1px solid var(--line);border-bottom:none;border-radius:22px 22px 0 0;
     padding:18px 20px calc(var(--sab) + 18px);transition:transform .45s cubic-bezier(.2,.8,.2,1);z-index:10}
-  #drawer.open{transform:translate(-50%,0)}
-  #drawer h2{font-family:'Noto Serif KR',serif;font-size:18px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
-  #drawer h2 button{background:none;border:none;color:var(--dim);font-size:22px;cursor:pointer;padding:0 4px}
+  #drawer.open,#share.open{transform:translate(-50%,0)}
+  #drawer h2,#share h2{font-family:'Noto Serif KR',serif;font-size:18px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
+  #drawer h2 button,#share h2 button{background:none;border:none;color:var(--dim);font-size:22px;cursor:pointer;padding:0 4px}
   .card{border-top:1px solid var(--line);padding:11px 0}
   .card b{display:block;font-size:13.5px;margin-bottom:4px}
   .card p{font-size:12.5px;color:var(--dim);line-height:1.65}
@@ -88,6 +88,20 @@
     border-radius:10px;padding:6px 11px;cursor:pointer}
   #depth button.on{background:rgba(255,214,160,.25);border-color:rgba(255,214,160,.55);font-weight:600}
   #depth.off{opacity:0;pointer-events:none}
+  .shgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .shgrid button{border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--ink);font:inherit;border-radius:14px;
+    padding:10px 8px;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:20px;cursor:pointer}
+  .shgrid button b{font-size:13px}
+  .shgrid button small{font-size:10.5px;color:var(--dim)}
+  .shgrid button:active{background:rgba(255,255,255,.16)}
+  #shres{margin-top:12px;text-align:center}
+  #shprev video,#shprev img{max-height:28vh;max-width:100%;border-radius:12px;border:1px solid var(--line)}
+  #shres .row{display:flex;gap:8px;margin-top:8px}
+  #shres .row button{flex:1;height:40px;border-radius:12px;border:1px solid var(--line);background:rgba(255,214,160,.2);color:var(--ink);font:inherit;font-weight:600}
+  .linkbox{width:100%;padding:9px;border-radius:10px;border:1px solid var(--line);background:rgba(0,0,0,.3);color:var(--ink);font-size:12px}
+  .shnote{font-size:11px;color:var(--dim);margin-top:10px;line-height:1.6;text-align:center}
+  #recbadge{position:fixed;top:calc(var(--sat) + 14px);left:50%;transform:translateX(-50%);background:rgba(200,30,40,.85);
+    color:#fff;font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:20px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:20}
   #toast{position:fixed;top:calc(var(--sat) + 196px);left:50%;transform:translateX(-50%);background:var(--glass);
     border:1px solid var(--line);border-radius:12px;padding:9px 14px;font-size:12.5px;opacity:0;transition:opacity .4s;
     pointer-events:none;text-align:center;line-height:1.5;backdrop-filter:blur(10px);white-space:nowrap}
@@ -146,6 +160,7 @@
     <button class="main" id="play">▶<span class="t">재생</span></button>
     <button id="regrow">↻<span class="t">새로 심기</span></button>
     <button id="spin">🔄<span class="t">회전</span></button>
+    <button id="sharebtn">💌<span class="t">공유</span></button>
     <button id="full">⛶<span class="t">전체화면</span></button>
     <button id="info">ⓘ<span class="t">이야기</span></button>
   </div>
@@ -189,6 +204,19 @@
     (자라는 모습이 보이도록<br>쇳물을 반투명하게 그렸어요.)</p></div>
 </div>
 
+<div id="share">
+  <h2>공유하기 <button id="sclose" aria-label="닫기">×</button></h2>
+  <div class="shgrid">
+    <button id="recSpin">🎬<b>돌아가는 영상</b><small>8초 · 세로 영상</small></button>
+    <button id="recGrow">🌱<b>자라는 과정 영상</b><small>14초 · 씨앗부터 색까지</small></button>
+    <button id="snap">📷<b>사진</b><small>지금 보이는 각도</small></button>
+    <button id="link">🔗<b>내 결정 링크</b><small>열면 똑같이 자라요</small></button>
+  </div>
+  <div id="shres" hidden><div id="shprev"></div>
+    <div class="row"><button id="shsend">보내기</button><button id="shsave">저장</button></div></div>
+  <p class="shnote">영상은 휴대폰에 따라 mp4 또는 webm으로 저장돼요.<br>녹화하는 동안 결정이 천천히 돌아가요.</p>
+</div>
+<div id="recbadge">● 녹화 중</div>
 <div id="toast"></div>
 <div id="inapp"><div><b>기본 브라우저에서 열어 주세요</b>
   이 앱 안의 브라우저에서는<br>결정이 제대로 보이지 않을 수 있어요.<br><br>
@@ -363,7 +391,7 @@ function rng(seed){let a=seed>>>0;return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.im
 //   알맞게     → 움푹한 '계단 결정'(호퍼)
 //   많이 차갑게 → 모서리가 내달려 곁가지가 돋는 '뼈대 결정'
 // (정확한 온도-모양 수치는 알려진 자료가 없어 경향만 반영)
-let coolU=0.45;
+let coolU=0.45, crystalSeed=Math.floor(Math.random()*1e9);
 function shapeOf(u){
   const irr=smooth(0.55,1,u);
   return {
@@ -460,7 +488,7 @@ function makeCrystal(R,o){
 function buildFromSeeds(){
   for(const c of crystals) world.remove(c.g);
   crystals=[]; allBars=[]; lastG=-1;
-  const R=rng(Math.floor(Math.random()*1e9));
+  const R=rng(crystalSeed);
   const sh=shapeOf(coolU);
   // 결정끼리 만나면 더 못 자라므로 이웃 씨앗과의 거리로 크기가 정해짐
   seeds.forEach((s,i)=>{
@@ -628,6 +656,7 @@ document.querySelectorAll('#ticks span').forEach(s=>s.onclick=()=>{
   ensureSeeds(); waitingSeeds=false; T=v; scrub.value=T*1000; setPlay(true);
 });
 function newRound(){
+  crystalSeed=Math.floor(Math.random()*1e9);
   clearSeeds(); buildFromSeeds();
   T=0.04; waitingSeeds=true; lastPhase=-1; setPlay(true);
 }
@@ -690,7 +719,7 @@ function onOrient(e){
   // 조명용 기준은 천천히 따라와서, 움직일 때마다 빛이 새로 일렁임
   if(!lightBase) lightBase={b:e.beta,g:e.gamma};
   lightBase.b+=(e.beta-lightBase.b)*0.004; lightBase.g+=(e.gamma-lightBase.g)*0.004;
-  lightNow.x=clamp(e.gamma-lightBase.g,-40,40); lightNow.y=clamp(e.beta-lightBase.b,-40,40);
+  if(!rec){ lightNow.x=clamp(e.gamma-lightBase.g,-40,40); lightNow.y=clamp(e.beta-lightBase.b,-40,40); }
   if(tiltOn){
     if(!tiltBase) tiltBase={b:e.beta,g:e.gamma};
     tiltNow.a=clamp((e.gamma-tiltBase.g),-35,35)*Math.PI/180*0.9;
@@ -787,6 +816,144 @@ function applyTilt(){
 
 let toastT; function toast(msg){const t=$('toast');t.innerHTML=msg;t.style.opacity=1;clearTimeout(toastT);toastT=setTimeout(()=>t.style.opacity=0,2600);}
 
+/* ---------- 공유: 영상 · 사진 · 내 결정 링크 ---------- */
+const HOME='https://jihye84.github.io/Bi/';
+let shareFile=null, shareURL=null, rec=null;
+const comp=document.createElement('canvas'), cx2=comp.getContext('2d');
+function openShare(){ $('share').classList.add('open'); $('drawer').classList.remove('open'); }
+function closeShare(){ $('share').classList.remove('open'); }
+$('sharebtn').onclick=()=>{ startSensor(); $('share').classList.contains('open')?closeShare():openShare(); };
+$('sclose').onclick=closeShare;
+
+// 화면(WebGL)을 배경·글씨와 함께 정해진 크기로 옮겨 그림
+function composite(W,H){
+  if(comp.width!==W||comp.height!==H){ comp.width=W; comp.height=H; }
+  const g=cx2.createRadialGradient(W*0.5,H*0.38,0,W*0.5,H*0.38,Math.max(W,H)*0.75);
+  g.addColorStop(0,'#2a2233'); g.addColorStop(0.55,'#120e18'); g.addColorStop(1,'#060509');
+  cx2.fillStyle=g; cx2.fillRect(0,0,W,H);
+  const cw=canvas.width, ch=canvas.height, sc=Math.max(W/cw,H/ch);
+  cx2.drawImage(canvas,(W-cw*sc)/2,(H-ch*sc)/2,cw*sc,ch*sc);
+  const u=W/1080;
+  cx2.textAlign='left'; cx2.fillStyle='rgba(242,236,244,.92)';
+  cx2.font=`700 ${Math.round(44*u)}px 'Noto Serif KR', serif`;
+  cx2.fillText('비스무트 결정',56*u,H-112*u);
+  cx2.fillStyle='rgba(242,236,244,.55)';
+  cx2.font=`300 ${Math.round(24*u)}px 'Noto Sans KR', sans-serif`;
+  cx2.fillText('jihye84.github.io/Bi',58*u,H-66*u);
+}
+
+function showResult(blob,name,kind){
+  shareFile=new File([blob],name,{type:blob.type});
+  if(shareURL) URL.revokeObjectURL(shareURL);
+  shareURL=URL.createObjectURL(blob);
+  const pv=$('shprev');
+  pv.innerHTML=kind==='video'?`<video src="${shareURL}" autoplay loop muted playsinline></video>`:`<img src="${shareURL}" alt="결정 사진">`;
+  $('shres').hidden=false;
+  $('shsend').hidden=!(navigator.canShare&&navigator.canShare({files:[shareFile]}));
+  openShare();
+}
+$('shsend').onclick=async()=>{
+  try{ await navigator.share({files:[shareFile],title:'비스무트 결정',text:'내가 키운 비스무트 결정 '+HOME}); }
+  catch(e){ if(e&&e.name!=='AbortError') toast('보내기가 안 되는 화면이에요.<br>‘저장’을 눌러 주세요.'); }
+};
+$('shsave').onclick=()=>{
+  const a=document.createElement('a'); a.href=shareURL; a.download=shareFile.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('저장했어요.<br>(안 되면 미리보기를 길게 눌러 저장해요)');
+};
+
+// 사진: 4:5 (인스타그램 피드 비율)
+// 찍는 순간만 카메라를 조금 당겨 결정이 화면을 시원하게 채우도록
+function dolly(f){ tmp.copy(camera.position).sub(controls.target).multiplyScalar(f); camera.position.copy(controls.target).add(tmp); }
+$('snap').onclick=()=>{
+  const keep=camera.position.clone(); dolly(0.66);
+  renderer.render(scene,camera); composite(1080,1350);
+  camera.position.copy(keep);
+  comp.toBlob(b=>{ if(b) showResult(b,'bismuth.png','image'); else toast('사진을 만들지 못했어요.'); },'image/png');
+};
+
+// 영상: 9:16 세로 (릴스·스토리 비율)
+function pickMime(){
+  if(typeof MediaRecorder==='undefined') return null;
+  for(const m of ['video/mp4;codecs=avc1.42E01E','video/mp4','video/webm;codecs=vp9','video/webm'])
+    if(MediaRecorder.isTypeSupported(m)) return m;
+  return null;
+}
+function startRec(mode){
+  if(rec) return;
+  const mime=pickMime();
+  if(!mime||!comp.captureStream){ toast('이 브라우저에서는 영상 녹화가 안 돼요.<br>‘사진’을 써 보세요.'); return; }
+  if(mode==='grow'){ ensureSeeds(); waitingSeeds=false; T=0.07; }
+  else if(T<0.7){ toast('색이 다 피어난 뒤에 찍으면 더 예뻐요!'); }
+  setPlay(false);
+  composite(1080,1920);
+  const stream=comp.captureStream(30);
+  const mr=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8e6});
+  const chunks=[];
+  mr.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
+  mr.onstop=()=>{
+    const type=mime.split(';')[0], ext=type.includes('mp4')?'mp4':'webm';
+    showResult(new Blob(chunks,{type}),`bismuth-${mode==='grow'?'grow':'spin'}.${ext}`,'video');
+    $('recbadge').style.opacity=0;
+  };
+  rec={mode,mr,t:0,dur:mode==='grow'?14:8,keep:camera.position.clone()}; dolly(0.8);
+  flingW.set(0,0,0);
+  closeShare(); $('caption').style.opacity=0;
+  $('recbadge').style.opacity=1;
+  mr.start(250);
+}
+$('recSpin').onclick=()=>startRec('spin');
+$('recGrow').onclick=()=>startRec('grow');
+
+// 녹화 중: 카메라를 천천히 돌리고, 빛도 살랑살랑 옮겨 다님
+function recTick(dt){
+  if(!rec) return;
+  rec.t+=dt;
+  const p=rec.t/rec.dur;
+  if(rec.mode==='grow'){ T=Math.min(1,lerp(0.07,1,clamp(p/0.88))); scrub.value=Math.round(T*1000); }
+  orbitBy(-0.38*dt,0);
+  lightNow.x=28*Math.sin(rec.t*0.8); lightNow.y=14*Math.sin(rec.t*0.55);
+  $('recbadge').textContent=`● 녹화 중 ${Math.ceil(rec.dur-rec.t)}초`;
+  if(rec.t>=rec.dur){ const r=rec; rec=null; lightNow.x=lightNow.y=0; dolly(1/0.8); r.mr.stop(); }
+}
+function recDraw(){ if(rec) composite(1080,1920); }
+
+// 내 결정 링크: 씨앗 자리·깊이 + 식히기 + 결정 모양의 바탕 수 를 주소에 담음
+function recipe(){
+  const sd=seeds.map(s=>[Math.round(s.x*100),Math.round(s.z*100),Math.round(s.dep/0.2)].join('_')).join('.');
+  return `${crystalSeed.toString(36)}~${Math.round(coolU*100)}~${sd}`;
+}
+$('link').onclick=async()=>{
+  if(!seeds.length){ ensureSeeds(); }
+  const url=HOME+'?c='+recipe();
+  let done=false;
+  if(navigator.share){
+    try{ await navigator.share({title:'비스무트 결정',text:'내가 키운 비스무트 결정이에요. 열면 똑같이 자라요!',url}); done=true; }
+    catch(e){ if(e&&e.name==='AbortError') return; }
+  }
+  if(!done){
+    try{ await navigator.clipboard.writeText(url); toast('링크를 복사했어요.<br>열면 똑같은 결정이 자라요.'); }
+    catch(e){ $('shres').hidden=false; $('shprev').innerHTML=`<input class="linkbox" readonly value="${url}">`; $('shsend').hidden=true; toast('아래 링크를 길게 눌러 복사해 주세요.'); }
+  }
+};
+function loadRecipe(){
+  const c=new URLSearchParams(location.search).get('c'); if(!c) return false;
+  try{
+    const [sd,cv,list]=c.split('~');
+    crystalSeed=parseInt(sd,36)||crystalSeed;
+    coolU=clamp((+cv||45)/100); $('cool').value=Math.round(coolU*100); $('coolname').textContent=coolName(coolU);
+    clearSeeds();
+    for(const it of (list||'').split('.').slice(0,MAXSEEDS)){
+      const [x,z,d]=it.split('_').map(Number); if([x,z].some(isNaN)) continue;
+      addSeed(x/100,z/100,clamp(d||0,0,7)*0.2);
+    }
+    if(!seeds.length) return false;
+    buildFromSeeds(); waitingSeeds=false; T=SEED_T; setPlay(true);
+    setTimeout(()=>toast('누군가 보내 준 결정이에요.<br>똑같이 자라나요!'),600);
+    return true;
+  }catch(e){ return false; }
+}
+
 /* ---------- 화면 크기 ---------- */
 function resize(){
   const w=innerWidth,h=innerHeight;
@@ -800,6 +967,7 @@ if(innerWidth/innerHeight<0.8){ camera.position.sub(controls.target).multiplySca
 
 /* ---------- 시작 ---------- */
 buildFromSeeds(); waitingSeeds=true; setPlay(true);
+loadRecipe();
 let prev=performance.now();
 renderer.setAnimationLoop(now=>{
   const dt=Math.min(0.05,(now-prev)/1000); prev=now;
@@ -814,11 +982,13 @@ renderer.setAnimationLoop(now=>{
     r.scale.setScalar(0.05+a*0.9); r.material.opacity=0.8*(1-a);
   }
   for(const s of seeds) s.m.rotation.y+=dt*1.5;
+  recTick(dt);
   apply(T);
   trackFling(dt);
   if(autoSpin&&!touching&&flingW.lengthSq()<0.04&&now-touchedAt>1500) orbitBy(-autoSpeed*0.25*dt,0);
   controls.update(); applyTilt();
   renderer.render(scene,camera);
+  recDraw();
 });
 $('loading').style.opacity=0;
 </script>
