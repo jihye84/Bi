@@ -962,6 +962,18 @@ function applyTilt(){
   orbitBy(-da,-db);
 }
 
+// 씨앗 심는 동안(녹이기 포함): 쇳물 표면이 늘 위에 오도록 — 위에서 비스듬히 내려다보는 범위로만
+const UP=new THREE.Vector3(0,1,0), uprightSph=new THREE.Spherical();
+function keepUpright(){
+  if(!(waitingSeeds||meltAnim)) return;
+  flingW.multiplyScalar(0.8);
+  camera.up.lerp(UP,0.25).normalize();
+  tmp.copy(camera.position).sub(controls.target); uprightSph.setFromVector3(tmp);
+  const want=clamp(uprightSph.phi,0.12,1.22);
+  uprightSph.phi+=(want-uprightSph.phi)*(Math.abs(want-uprightSph.phi)>0.6?0.15:1);
+  tmp.setFromSpherical(uprightSph); camera.position.copy(controls.target).add(tmp);
+  camera.lookAt(controls.target);
+}
 let toastT; function toast(msg){const t=$('toast');t.innerHTML=msg;t.style.opacity=1;clearTimeout(toastT);toastT=setTimeout(()=>t.style.opacity=0,2600);}
 
 /* ---------- 공유: 영상 · 사진 · 내 결정 링크 ---------- */
@@ -1141,7 +1153,7 @@ renderer.setAnimationLoop(now=>{
   apply(T);
   trackFling(dt);
   if(autoSpin&&!touching&&flingW.lengthSq()<0.04&&now-touchedAt>1500) orbitBy(-autoSpeed*0.25*dt,0);
-  controls.update(); applyTilt();
+  controls.update(); applyTilt(); keepUpright();
   renderer.render(scene,camera);
   recDraw();
 });
