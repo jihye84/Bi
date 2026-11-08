@@ -185,6 +185,9 @@
     많이 식히면 곁가지가 돋은 뼈대 결정이 돼요.<br>
     다만 몇 도에서 계단이 몇 mm가 되는지는<br>아직 정확히 밝혀지지 않아서<br>
     이 앱은 모양이 바뀌는 방향만 보여 줘요.</p></div>
+  <div class="card"><b>쇳물은 왜 은빛일까</b>
+    <p>비스무트는 271 °C쯤에서 녹아요.<br>쇠가 붉게 빛나려면 500 °C 넘게 뜨거워야 해서,<br>
+    녹은 비스무트는 빛나지 않고<br>거울 같은 은빛 액체로 보여요.</p></div>
   <div class="card"><b>실제로는 이렇게 만들어요</b>
     <p>비스무트는 약 271 °C에서 녹아요.<br>
     쇳물이 식으면 표면에 붙은 씨앗에서<br>결정이 쇳물 속으로 자라 내려가요.<br>
@@ -347,10 +350,10 @@ float oxThick(vec3 p){
 const softEdge=(()=>{const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');
   const gr=g.createRadialGradient(128,128,0,128,128,128);gr.addColorStop(0,'#fff');gr.addColorStop(0.72,'#fff');gr.addColorStop(1,'#000');
   g.fillStyle=gr;g.fillRect(0,0,256,256);return new THREE.CanvasTexture(c);})();
-const meltMat=new THREE.MeshPhysicalMaterial({color:0xd9d2d4,metalness:0.9,roughness:0.08,emissive:0xff6a20,emissiveIntensity:0,
+const meltMat=new THREE.MeshPhysicalMaterial({color:0xdcdbe0,metalness:1,roughness:0.05,emissive:0x000000,emissiveIntensity:0,
   transparent:true,opacity:0.5,alphaMap:softEdge,side:THREE.DoubleSide,depthWrite:false});
 const melt=new THREE.Mesh(new THREE.CircleGeometry(3.3,96),meltMat); melt.rotation.x=-Math.PI/2; melt.renderOrder=2; scene.add(melt);
-const glowMat=new THREE.MeshBasicMaterial({color:0xff6a2a,transparent:true,opacity:0,alphaMap:softEdge,depthWrite:false,side:THREE.DoubleSide,blending:THREE.AdditiveBlending});
+const glowMat=new THREE.MeshBasicMaterial({color:0xaeb4c4,transparent:true,opacity:0,alphaMap:softEdge,depthWrite:false,side:THREE.DoubleSide,blending:THREE.AdditiveBlending});
 const glows=[];
 for(let i=1;i<=5;i++){const m=new THREE.Mesh(new THREE.CircleGeometry(3.2-i*0.12,64),glowMat);m.rotation.x=-Math.PI/2;m.position.y=-i*0.5;scene.add(m);glows.push(m);}
 
@@ -565,7 +568,35 @@ function colorName(d){
 }
 
 const tmpM=new THREE.Matrix4();
+// 지난 결정을 쇳물에 녹이는 1.5초
+const MELT_DUR=1.5;
+let meltAnim=null;
+function startMelt(hold=0){
+  meltAnim={t:-hold,cap:false}; waitingSeeds=false; setPlay(false);
+  $('drawer').classList.remove('open'); $('share').classList.remove('open');
+}
+function meltFrame(){
+  const m=smooth(0,1,meltAnim.t/MELT_DUR);
+  updateGrowth(1-m);                                   // 바깥 계단부터 무너져 들어감
+  oxU.uD.value=MAX_NM*(1-smooth(0,0.55,m)); crystalMat.iridescence=smooth(4,45,oxU.uD.value);
+  pivot.rotation.x=0; pivot.position.y=lerp(0.15,-half*1.3,m); // 쇳물 속으로 가라앉음
+  pivot.updateMatrixWorld(true);
+  oxU.uWorldInv.value.copy(tmpM.copy(world.matrixWorld).invert());
+  meltMat.opacity=0.5; melt.visible=true; glowMat.opacity=0.07; for(const q of glows) q.visible=true;
+  seedGroup.visible=false; wireGroup.visible=false; guide.visible=false; $('depth').classList.add('off');
+  controls.target.y+=(0-controls.target.y)*0.06;
+  $('phase').textContent='녹이기';
+  $('reading').innerHTML='녹는점 271.4 °C';
+  if(!meltAnim.cap&&meltAnim.t>=0){ meltAnim.cap=true; const c=$('caption'); c.innerHTML='지난 결정을<br>쇳물에 녹여요.'; c.style.opacity=1; }
+  autoSpin=false;
+  if(meltAnim.t>=MELT_DUR){
+    meltAnim=null; crystalSeed=Math.floor(Math.random()*1e9);
+    clearSeeds(); buildFromSeeds();
+    T=0.04; waitingSeeds=true; lastPhase=-1; setPlay(true);
+  }
+}
 function apply(t){
+  if(meltAnim){ meltFrame(); return; }
   const heat=1-smooth(0.06,0.5,t);
   const g=smooth(SEED_T,0.6,t);
   const fade=smooth(0.6,0.645,t);
@@ -576,7 +607,7 @@ function apply(t){
   updateGrowth(g);
   oxU.uD.value=d;
   crystalMat.iridescence=smooth(4,45,d);
-  crystalMat.emissiveIntensity=0.35*heat*heat;
+  crystalMat.emissiveIntensity=0;
 
   // 매달린 모습(π) → 건져서 뒤집은 모습(0)
   pivot.rotation.x=Math.PI*(1-flip);
@@ -585,16 +616,14 @@ function apply(t){
   oxU.uWorldInv.value.copy(tmpM.copy(world.matrixWorld).invert());
 
   meltMat.opacity=0.5*(1-fade); melt.visible=meltMat.opacity>0.01;
-  meltMat.emissiveIntensity=0.7*heat;
-  glowMat.opacity=(0.05+0.09*heat)*(1-fade);
+  glowMat.opacity=0.07*(1-fade);
   for(const m of glows) m.visible=glowMat.opacity>0.005;
   seedGroup.visible=t<SEED_T+0.04;
   wireMat.opacity=0.7*(1-fade); wireGroup.visible=wireMat.opacity>0.01;
   guide.visible=waitingSeeds&&plantDepth>0; guide.position.y=-plantDepth+0.005;
   $('depth').classList.toggle('off',!waitingSeeds);
   for(const s of seeds) s.m.scale.setScalar(Math.max(0.001,1-smooth(SEED_T,SEED_T+0.04,t)));
-  hot.intensity=6*heat;
-  $('heat').style.opacity=(0.9*heat).toFixed(3);
+  hot.intensity=0; $('heat').style.opacity=0;
 
   // 카메라가 바라보는 곳: 쇳물 속 결정 → 건져 올린 결정
   let cx=0,cz=0; for(const s of seeds){cx+=s.x;cz+=s.z;} if(seeds.length){cx/=seeds.length;cz/=seeds.length;}
@@ -656,6 +685,8 @@ document.querySelectorAll('#ticks span').forEach(s=>s.onclick=()=>{
   ensureSeeds(); waitingSeeds=false; T=v; scrub.value=T*1000; setPlay(true);
 });
 function newRound(){
+  if(crystals.length&&T>0.62&&!meltAnim){ startMelt(0); return; }
+  if(meltAnim) return;
   crystalSeed=Math.floor(Math.random()*1e9);
   clearSeeds(); buildFromSeeds();
   T=0.04; waitingSeeds=true; lastPhase=-1; setPlay(true);
@@ -967,7 +998,11 @@ if(innerWidth/innerHeight<0.8){ camera.position.sub(controls.target).multiplySca
 
 /* ---------- 시작 ---------- */
 buildFromSeeds(); waitingSeeds=true; setPlay(true);
-loadRecipe();
+if(!loadRecipe()){
+  ensureSeeds(); for(const r of ripples) scene.remove(r); ripples.length=0;
+  T=1; lastPhase=4; controls.target.set(0,0.15,0);
+  startMelt(0.9);
+}
 let prev=performance.now();
 renderer.setAnimationLoop(now=>{
   const dt=Math.min(0.05,(now-prev)/1000); prev=now;
@@ -983,6 +1018,7 @@ renderer.setAnimationLoop(now=>{
   }
   for(const s of seeds) s.m.rotation.y+=dt*1.5;
   recTick(dt);
+  if(meltAnim) meltAnim.t+=dt;
   apply(T);
   trackFling(dt);
   if(autoSpin&&!touching&&flingW.lengthSq()<0.04&&now-touchedAt>1500) orbitBy(-autoSpeed*0.25*dt,0);
