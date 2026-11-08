@@ -243,7 +243,7 @@ camera.position.set(3.5,2.5,5.8);
 const controls=new TrackballControls(camera,canvas);
 controls.target.set(0,-0.6,0);
 controls.noPan=true; controls.minDistance=2.4; controls.maxDistance=14;
-controls.rotateSpeed=3.2; controls.zoomSpeed=1.1;
+controls.rotateSpeed=2.8; controls.zoomSpeed=1.1;
 controls.staticMoving=false; controls.dynamicDampingFactor=0.1;
 // 손을 대고 있는 동안과 놓은 뒤 잠깐은 저절로 돌지 않게
 let autoSpin=false, autoSpeed=0.35, touchedAt=-1e9, touching=false;
@@ -715,10 +715,42 @@ else addEventListener('click',()=>startSensor(),{once:true});
 //  회전: 손가락으로 휙 밀면 그 방향으로 계속 돌고, 가만두면 천천히 저절로 돎
 //  멈춤: 손가락을 떼면 그 자리에 딱 멈춤. 폰 각도에 따라 빛만 바뀜
 let spinMode=true;
+// 손을 뗄 때의 회전 빠르기를 이어 받아 돌리되, 최고 빠르기를 제한하고 천천히 잦아들게
+controls.staticMoving=true;
+const FLING_MAX=1.6;      // 초당 최대 약 1.6 rad (≈ 4초에 한 바퀴)
+const FLING_DECAY=3.0;    // 이 시간(초)마다 약 1/e로 줄어듦
+const flingW=new THREE.Vector3(), dragW=new THREE.Vector3(), prevQ=new THREE.Quaternion(), dq=new THREE.Quaternion(), fq=new THREE.Quaternion();
+let prevQok=false;
+function trackFling(dt){
+  if(touching){
+    if(prevQok&&dt>0){
+      dq.copy(camera.quaternion).multiply(prevQ.clone().invert());
+      if(dq.w<0){dq.x=-dq.x;dq.y=-dq.y;dq.z=-dq.z;dq.w=-dq.w;}
+      const ang=2*Math.acos(Math.min(1,dq.w)), sn=Math.sqrt(Math.max(1e-12,1-dq.w*dq.w));
+      const w=new THREE.Vector3(dq.x/sn,dq.y/sn,dq.z/sn).multiplyScalar(ang/dt);
+      const a=1-Math.exp(-dt/0.06);          // 마지막 순간의 움직임을 중심으로
+      dragW.lerp(w,a);
+    }
+    prevQ.copy(camera.quaternion); prevQok=true; flingW.set(0,0,0);
+    return;
+  }
+  prevQok=false;
+  const sp=flingW.length();
+  if(sp<0.03){ flingW.set(0,0,0); return; }
+  fq.setFromAxisAngle(tmp.copy(flingW).normalize(),sp*dt);
+  const off=new THREE.Vector3().copy(camera.position).sub(controls.target).applyQuaternion(fq);
+  camera.up.applyQuaternion(fq).normalize();
+  camera.position.copy(controls.target).add(off); camera.lookAt(controls.target);
+  flingW.multiplyScalar(Math.exp(-dt/FLING_DECAY));
+}
+controls.addEventListener('end',()=>{
+  if(!spinMode) return;
+  flingW.copy(dragW); if(flingW.length()>FLING_MAX) flingW.setLength(FLING_MAX);
+  dragW.set(0,0,0);
+});
 function setSpin(on){
   spinMode=on;
-  controls.staticMoving=!on;
-  controls.dynamicDampingFactor=on?0.002:0.2;
+  if(!on) flingW.set(0,0,0);
   $('spin').innerHTML=on?'🔄<span class="t">회전</span>':'✋<span class="t">멈춤</span>';
   $('spin').classList.toggle('on',on);
 }
@@ -783,7 +815,8 @@ renderer.setAnimationLoop(now=>{
   }
   for(const s of seeds) s.m.rotation.y+=dt*1.5;
   apply(T);
-  if(autoSpin&&!touching&&now-touchedAt>4000) orbitBy(-autoSpeed*0.25*dt,0);
+  trackFling(dt);
+  if(autoSpin&&!touching&&flingW.lengthSq()<0.04&&now-touchedAt>1500) orbitBy(-autoSpeed*0.25*dt,0);
   controls.update(); applyTilt();
   renderer.render(scene,camera);
 });
