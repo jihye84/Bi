@@ -177,7 +177,7 @@
     뜨거울 때 공기와 만나야 색이 곱게 피어나요.</p></div>
   <div class="card"><b>감상하는 법</b>
     <p>손가락으로 끌면 돌아가고, 두 손가락으로 확대해요.<br>
-    아래로 끌어 내리면 결정 밑면도 올려다볼 수 있어요.<br>
+    어느 방향으로든 막힘없이 끝까지 굴려 볼 수 있어요.<br>
     ‘기울이기’를 켜면 폰 각도에 따라<br>결정이 돌고 무지갯빛도 바뀌어요.<br>
     아래 막대를 끌면 시간을 앞뒤로 옮길 수 있어요.<br>
     ‘새로 심기’를 누르고 쇳물을 톡 누르면<br>그 자리에 씨앗이 심어져요.<br>
@@ -215,7 +215,7 @@
 
 <script type="module">
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 const $ = id => document.getElementById(id);
@@ -237,11 +237,16 @@ scene.environment=pmrem.fromScene(new RoomEnvironment(renderer),0.03).texture;
 
 const camera=new THREE.PerspectiveCamera(36,1,0.05,100);
 camera.position.set(3.5,2.5,5.8);
-const controls=new OrbitControls(camera,canvas);
+// 위아래 끝에서 막히지 않고 어느 방향으로든 끝없이 굴려 볼 수 있는 트랙볼 방식
+const controls=new TrackballControls(camera,canvas);
 controls.target.set(0,-0.6,0);
-controls.enableDamping=true; controls.dampingFactor=0.07;
-controls.enablePan=false; controls.minDistance=2.4; controls.maxDistance=14;
-controls.minPolarAngle=0.02; controls.maxPolarAngle=Math.PI-0.02; controls.rotateSpeed=0.7;
+controls.noPan=true; controls.minDistance=2.4; controls.maxDistance=14;
+controls.rotateSpeed=3.2; controls.zoomSpeed=1.1;
+controls.staticMoving=false; controls.dynamicDampingFactor=0.1;
+// 손을 대고 있는 동안과 놓은 뒤 잠깐은 저절로 돌지 않게
+let autoSpin=false, autoSpeed=0.35, touchedAt=-1e9, touching=false;
+controls.addEventListener('start',()=>{touching=true;});
+controls.addEventListener('end',()=>{touching=false; touchedAt=performance.now();});
 
 const key=new THREE.DirectionalLight(0xfff4ea,2.2); key.position.set(4,7,3); scene.add(key);
 const rim=new THREE.DirectionalLight(0xc8d4ff,1.1); rim.position.set(-5,3,-4); scene.add(rim);
@@ -568,8 +573,8 @@ function apply(t){
     cap.style.opacity=0;
     setTimeout(()=>{cap.innerHTML=PHASES[ph].cap; cap.style.opacity=PHASES[ph].cap?1:0;},350);
   }
-  controls.autoRotate=(playing&&ph>=1)||ph===4;
-  controls.autoRotateSpeed=ph===4?0.7:0.35;
+  autoSpin=(playing&&ph>=1)||ph===4;
+  autoSpeed=ph===4?0.7:0.35;
 }
 
 /* ---------- 조작 ---------- */
@@ -674,16 +679,22 @@ $('tilt').onclick=async()=>{
     setTimeout(()=>{ if(tiltOn&&!tiltGot){ toast('기울기 센서를 쓸 수 없는 화면이에요.<br>손가락으로 끌어 돌려 보세요.'); tiltOn=false; $('tilt').classList.remove('on'); }},1500);
   }catch(e){ toast('기울기 센서를 쓸 수 없는 화면이에요.<br>손가락으로 끌어 돌려 보세요.'); }
 };
-const sph=new THREE.Spherical(), tmp=new THREE.Vector3();
+const tmp=new THREE.Vector3(), axR=new THREE.Vector3(), qA=new THREE.Quaternion(), qB=new THREE.Quaternion();
+// 화면 세로축(yaw)·가로축(pitch)으로 카메라를 대상 둘레로 돌림 — 막히는 각도 없음
+function orbitBy(yaw,pitch){
+  tmp.copy(camera.position).sub(controls.target);
+  axR.crossVectors(camera.up,tmp).normalize();
+  qA.setFromAxisAngle(camera.up,yaw); qB.setFromAxisAngle(axR,pitch); qA.multiply(qB);
+  tmp.applyQuaternion(qA); camera.up.applyQuaternion(qB).normalize();
+  camera.position.copy(controls.target).add(tmp); camera.lookAt(controls.target);
+}
 function applyTilt(){
   shiftNow+=((tiltOn?tiltNow.c:0)-shiftNow)*0.12; oxU.uShift.value=shiftNow;
   const ta=tiltOn?tiltNow.a:0, tb=tiltOn?tiltNow.b:0;
   const da=(ta-tiltApplied.a)*0.15, db=(tb-tiltApplied.b)*0.15;
   if(Math.abs(da)+Math.abs(db)<1e-5) return;
   tiltApplied.a+=da; tiltApplied.b+=db;
-  tmp.copy(camera.position).sub(controls.target); sph.setFromVector3(tmp);
-  sph.theta-=da; sph.phi=clamp(sph.phi-db,0.03,Math.PI-0.03);
-  tmp.setFromSpherical(sph); camera.position.copy(controls.target).add(tmp);
+  orbitBy(-da,-db);
 }
 
 let toastT; function toast(msg){const t=$('toast');t.innerHTML=msg;t.style.opacity=1;clearTimeout(toastT);toastT=setTimeout(()=>t.style.opacity=0,2600);}
@@ -691,6 +702,7 @@ let toastT; function toast(msg){const t=$('toast');t.innerHTML=msg;t.style.opaci
 /* ---------- 화면 크기 ---------- */
 function resize(){
   const w=innerWidth,h=innerHeight;
+  if(controls.handleResize) controls.handleResize();
   renderer.setSize(w,h,false); camera.aspect=w/h;
   camera.fov=w/h<0.6?56:w/h<0.8?50:w/h<1.2?42:34;
   camera.updateProjectionMatrix();
@@ -715,6 +727,7 @@ renderer.setAnimationLoop(now=>{
   }
   for(const s of seeds) s.m.rotation.y+=dt*1.5;
   apply(T);
+  if(autoSpin&&!touching&&now-touchedAt>2500) orbitBy(-autoSpeed*0.25*dt,0);
   controls.update(); applyTilt();
   renderer.render(scene,camera);
 });
