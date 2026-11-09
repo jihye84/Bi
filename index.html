@@ -84,7 +84,7 @@
   #depth .pats{gap:4px}
   #depth .pats button{border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--ink);font:inherit;font-size:13px;
     border-radius:9px;min-width:30px;padding:4px 7px;cursor:pointer;font-family:'Noto Sans KR',sans-serif}
-  #depth .pats button[data-p="mix"],#depth .pats button[data-p="말림"],#depth .pats button[data-p="쌍말림"]{font-size:11px;padding:4px 5px}
+  #depth .pats button[data-p="다발"],#depth .pats button[data-p="mix"],#depth .pats button[data-p="말림"],#depth .pats button[data-p="쌍말림"]{font-size:11px;padding:4px 5px}
   #depth .pats{flex-wrap:wrap;justify-content:center;max-width:300px}
   #depth .pats button.on{background:rgba(255,214,160,.25);border-color:rgba(255,214,160,.55);font-weight:700}
   #depth b{font-size:11.5px;color:#ffd9a8;min-width:24px;text-align:right}
@@ -152,7 +152,7 @@
 <div id="depth">
   <div class="row"><span>심는 깊이</span><small>표면</small><input type="range" id="dep" min="0" max="7" step="1" value="0" aria-label="심는 깊이"><small>깊이</small><b id="depname">1단</b></div>
   <div class="row"><span>식히기</span><small>천천히</small><input type="range" id="cool" min="0" max="170" value="45" aria-label="식히는 빠르기"><small>빠르게</small><b style="visibility:hidden">1단</b></div>
-  <div class="row pats" id="pats"><span>무늬</span><button data-p="mix" class="on">섞기</button><button data-p="ㅁ">ㅁ</button><button data-p="ㄷ">ㄷ</button><button data-p="ㄹ">ㄹ</button><button data-p="ㄴ">ㄴ</button><button data-p="回">回</button><button data-p="말림">말림</button><button data-p="쌍말림">쌍말림</button></div>
+  <div class="row pats" id="pats"><span>무늬</span><button data-p="다발" class="on">다발</button><button data-p="mix">섞기</button><button data-p="ㅁ">ㅁ</button><button data-p="ㄷ">ㄷ</button><button data-p="ㄹ">ㄹ</button><button data-p="ㄴ">ㄴ</button><button data-p="回">回</button><button data-p="말림">말림</button><button data-p="쌍말림">쌍말림</button></div>
   <div class="row note" id="coolname">계단 결정</div>
 </div>
 <div id="caption"></div>
@@ -211,6 +211,7 @@
     回: 끊긴 자리가 돌며 감기는 네모 나선<br>
     말림: 한 줄 테두리가 처음부터 끝까지<br>안쪽으로 말려 내려가는 계단<br>
     쌍말림: 가운데 두 갈래 말림을<br>네모 테두리가 겹겹이 감싼 계단<br>
+    다발: 작은 계단 결정들이 같은 방향으로<br>모서리마다 이어 붙은 탑 모양 (기본)<br>
     섞기: 큰 결정, 가지, 곁결정이<br>저마다 다른 무늬로 자라요.</p></div>
   <div class="card"><b>실제로는 이렇게 만들어요</b>
     <p>비스무트는 약 271 °C에서 녹아요.<br>
@@ -332,11 +333,12 @@ const crystalMat=new THREE.MeshPhysicalMaterial({
 crystalMat.onBeforeCompile=sh=>{
   Object.assign(sh.uniforms,oxU);
   sh.vertexShader=sh.vertexShader
-    .replace('#include <common>','#include <common>\nuniform mat4 uWorldInv;\nvarying vec3 vOx;')
-    .replace('#include <project_vertex>','#include <project_vertex>\nvec4 oxp=vec4(transformed,1.0);\n#ifdef USE_INSTANCING\n oxp=instanceMatrix*oxp;\n#endif\nvOx=(uWorldInv*modelMatrix*oxp).xyz;');
+    .replace('#include <common>','#include <common>\nuniform mat4 uWorldInv;\nvarying vec3 vOx;\nvarying float vUp;')
+    .replace('#include <project_vertex>','#include <project_vertex>\nvec4 oxp=vec4(transformed,1.0);\n#ifdef USE_INSTANCING\n oxp=instanceMatrix*oxp;\n#endif\nvOx=(uWorldInv*modelMatrix*oxp).xyz;\nvec3 onr=objectNormal;\n#ifdef USE_INSTANCING\n onr=mat3(instanceMatrix)*onr;\n#endif\nvUp=normalize((uWorldInv*modelMatrix*vec4(onr,0.0)).xyz).y;');
   sh.fragmentShader=sh.fragmentShader
     .replace('#include <common>',`#include <common>
 varying vec3 vOx;
+varying float vUp;
 uniform float uD, uShift, uTime; uniform vec3 uOff; uniform vec3 uSeeds[${MAXSEEDS}];
 float h3(vec3 p){p=fract(p*0.3183099+0.1);p*=17.0;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}
 float vn(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.0-2.0*f);
@@ -349,7 +351,9 @@ float oxThick(vec3 p){
   // 노이즈로 좌표를 비틀어 등고선이 물결치며 섞이게
   vec3 q=p+uOff;
   vec3 w=vec3(fbm(q*0.7),fbm(q*0.7+5.2),fbm(q*0.7+9.7));
-  float f = 0.8 + 0.5*r + 0.10*p.y + 0.42*(fbm(q*0.8+w*1.8)-0.5) + 0.03*(vn(q*6.0)-0.5);
+  // 위를 보는 면(테두리 윗면)은 막이 얇아 금빛, 옆으로 선 벽은 두꺼워 보라·남빛 (사진 관찰)
+  float up=smoothstep(0.6,0.95,vUp);
+  float f = 0.86 - 0.5*up + 0.35*r + 0.10*p.y + 0.42*(fbm(q*0.8+w*1.8)-0.5) + 0.03*(vn(q*6.0)-0.5);
   return max(0.0, uD*f + uShift*(0.6+0.4*f));
 }`)
     // 표면 결: 잔물결 + 계단과 나란한 가는 성장 줄무늬 + 드문드문 오목한 점 (범프로 법선만 살짝 흔듦)
@@ -551,8 +555,8 @@ let allBars=[], growRate=30, lastG=-1;
 let meanderU=0.5;
 
 // 무늬 모양 고르기: mix(섞기) · ㅁ · ㄷ · ㄹ · ㄴ · 回(나선)
-let patMode='mix';
-const PAT_LIST=['auto','ㅁ','ㄷ','ㄹ','ㄴ','回','말림','쌍말림'];
+let patMode='다발';
+const PAT_LIST=['auto','ㅁ','ㄷ','ㄹ','ㄴ','回','말림','쌍말림','다발'];
 // 말림: 한 바퀴 돌던 테두리가 끝에서 안쪽으로 돌돌 말려 들어가는 갈고리 (그려 준 모양)
 const RIEUL_PATH=[[-1,-1],[1,-1],[1,0],[-0.85,0],[-0.85,1],[1,1]];
 const KEY_PATH=[[1,0.05],[1,-1],[-1,-1],[-1,1],[0.1,1],[0.1,0.35],[-0.5,0.35],[-0.5,0.68],[-0.2,0.68]];
@@ -614,7 +618,7 @@ function addRings(parent,bars,R,{N,step,rise,fill,irr,kBase=0,twistMul=1,treads=
       const hw=rimH*(0.9+R()*0.2);
       if(!open.includes(j)){
         // 모서리를 지나 삐죽 나가는 갈고리(꺾쇠 무늬)
-        const hook=(mode==='auto')&&(k>2&&R()<0.12+0.3*mU+0.2*irr)?step*(1.2+R()*2.6):0;
+        const hook=(mode==='auto'&&k>2&&R()<0.12+0.3*mU+0.2*irr)||(mode==='다발'&&k>N*0.35&&R()<0.42)?step*(1.2+R()*2.6):0;
         const L=(alongX?2*sj+tr:Math.max(tr,2*sj-tr))+hook;
         const missing=k>3&&R()<0.03+0.25*irr?0.45+R()*0.45:1;
         const hb=lerp(hw,Math.max(hw,hj-base),fill);
@@ -664,6 +668,12 @@ function addRings(parent,bars,R,{N,step,rise,fill,irr,kBase=0,twistMul=1,treads=
           const ls=step*(1+R()*2.2), endA=spin*(L/2-tr/2), out=side*(sj+ls/2-tr/2);
           push(ring,{k:k+kBase,j:j+0.8,alongX:!alongX,L:ls,t:tr,h:hj,hb:hw,
             cx:alongX?endA+hook*0.5*spin:out, cz:alongX?out:endA+hook*0.5*spin, dir:side,off:0});
+          // 다발: 한 번 더 안쪽으로 꺾여 G자 갈고리
+          if(mode==='다발'&&R()<0.65){
+            const lb=Math.min(hook+step,step*(1.2+R()*1.6)), aEnd=endA+hook*0.5*spin, pp=side*(sj+ls-tr);
+            push(ring,{k:k+kBase,j:j+0.9,alongX,L:lb,t:tr,h:hj,hb:hw,
+              cx:alongX?aEnd-spin*lb/2:pp, cz:alongX?pp:aEnd-spin*lb/2, dir:-spin,off:0});
+          }
         }
       }
       // 디딤판: 안쪽 층 테두리와 이 층 테두리 사이
@@ -787,11 +797,69 @@ function addDouble(parent,bars,R,{N,step,rise,fill=0,kBase=0}){
   return last;
 }
 
+
+/* 다발 (사진 속 작은 비스무트 결정들을 보고 만든 모양)
+   - 모든 호퍼가 같은 방향으로 나란함
+   - 한 대각선을 따라 작은 호퍼가 앞 결정의 모서리에 얹히듯 줄지어 이어짐 (탑·나무 모양)
+   - 줄기 결정마다 옆 모서리에 더 작은 날개 결정이 붙음
+   - 테두리 모서리마다 ㄱ·G자 갈고리 */
+function makeCluster(R,o,g,bars,sh,rise){
+  const step=sh.step*1.05;
+  const N0=Math.max(6,Math.round(o.N*0.62));
+  const ax=R()<.5?1:-1, az=R()<.5?1:-1;      // 줄기가 뻗는 대각선
+  const nodes=[];
+  let kMax=0;
+  const place=(cx,cz,cy,N,kb)=>{
+    const sub=new THREE.Group(); sub.position.set(cx,cy,cz); g.add(sub);
+    const last=addRings(sub,bars,R,{N,step,rise,fill:sh.fill*0.6,irr:0,kBase:kb,mode:'다발'});
+    kMax=Math.max(kMax,kb+N);
+    return {cx,cz,cy,N,s:N*step,h:N*rise,kb,last,sub};
+  };
+  const root=place(0,0,0,N0,0); nodes.push(root);
+  // 줄기: 양쪽 대각선으로 몇 마디씩
+  for(const dir of [1,-1]){
+    let prev=root; const cnt=dir>0?2+Math.floor(R()*3):1+Math.floor(R()*2);
+    for(let i=0;i<cnt;i++){
+      const N=Math.max(3,Math.round(prev.N*(0.62+R()*0.2)));
+      const d=prev.s*(0.95+R()*0.15);
+      const c=place(prev.cx+dir*ax*d,prev.cz+dir*az*d,prev.cy+prev.h*0.35-N*rise*0.55,N,prev.kb+Math.round(prev.N*0.55));
+      nodes.push(c); prev=c;
+    }
+  }
+  // 날개: 줄기 결정의 옆 모서리(반대 대각선)
+  for(const nd of nodes.slice()){
+    for(const sg of [1,-1]){
+      if(R()>0.55||nd.N<5) continue;
+      const N=Math.max(3,Math.round(nd.N*(0.4+R()*0.2))), d=nd.s*(0.9+R()*0.2);
+      nodes.push(place(nd.cx+sg*ax*d,nd.cz-sg*az*d,nd.cy+nd.h*0.3-N*rise*0.5,N,nd.kb+Math.round(nd.N*0.65)));
+    }
+  }
+  // 계단 위 작은 말림·ㅁ 곁결정 조금
+  for(const nd of nodes){
+    const cand=nd.last.rings.filter(r=>r.k>=nd.N*0.5);
+    const nm=Math.round(nd.N/5);
+    for(let m=0;m<nm&&cand.length;m++){
+      const r=cand[Math.floor(R()*cand.length)], j=Math.floor(R()*4), t=(R()*1.4-0.7)*r.s;
+      const pt=[[t,-r.s],[r.s,t],[t,r.s],[-r.s,t]][j];
+      const mg=new THREE.Group(); mg.position.set(pt[0],r.h,pt[1]); nd.sub.add(mg);
+      if(R()<0.5) addSpiral(mg,bars,R,{N:3+Math.floor(R()*3),step:step*0.7,rise:rise*0.8,kBase:nd.kb+r.k});
+      else addRings(mg,bars,R,{N:2+Math.floor(R()*3),step:step*0.7,rise:rise*0.8,fill:0,irr:0,kBase:nd.kb+r.k,treads:false,mode:'다발'});
+    }
+  }
+  g.position.set(o.x,o.dep||0,o.z);
+  const ta=R()*6.28; g.quaternion.setFromAxisAngle(new THREE.Vector3(Math.cos(ta),0,Math.sin(ta)),o.tilt);
+  g.rotateY(R()*1.57);
+  world.add(g);
+  let top=0, bot=0; for(const nd of nodes){ top=Math.max(top,nd.cy+nd.h*1.15); bot=Math.min(bot,nd.cy-rise*3); }
+  return {g,bars,N:kMax,nMain:N0,step,rise,delay:o.delay,dep:o.dep||0,top:top+(o.dep||0),bot};
+}
+
 function makeCrystal(R,o){
   const g=new THREE.Group(); const bars=[];
   const sh=shapeOf(coolU);
   const rise=sh.rise*(0.9+R()*0.2);
   const mMain=pickPat(R), wide=1;
+  if(mMain==='다발') return makeCluster(R,o,g,bars,sh,rise);
   const last=mMain==='쌍말림'
     ?addDouble(g,bars,R,{N:o.N,step:sh.step,rise,fill:sh.fill*0.5})
     :mMain==='말림'
@@ -1125,7 +1193,8 @@ const PAT_TIP={mix:'결정마다 무늬가 제각각 섞여요.',
   'ㄹ':'⊐와 ⊏ 계단이 이어져<br>처음부터 ㄹ자로 자라요.','ㄴ':'두 변만 자란 ㄴ자가<br>꺾쇠처럼 겹쳐요.',
   '回':'끊긴 틈이 한 바퀴씩 돌아가며<br>네모 나선으로 감겨요.',
   '말림':'테두리 한 줄이 처음부터<br>안쪽으로 돌돌 말려 내려가요.',
-  '쌍말림':'가운데 두 갈래 말림을<br>네모 테두리가 겹겹이 감싸요.'};
+  '쌍말림':'가운데 두 갈래 말림을<br>네모 테두리가 겹겹이 감싸요.',
+  '다발':'같은 방향의 작은 계단 결정이<br>모서리마다 줄지어 이어져요.'};
 document.querySelectorAll('#pats button').forEach(b=>b.onclick=()=>{
   patMode=b.dataset.p;
   document.querySelectorAll('#pats button').forEach(x=>x.classList.toggle('on',x===b));
@@ -1406,7 +1475,7 @@ function recDraw(){ if(rec) composite(1080,1920); }
 // 내 결정 링크: 씨앗 자리·깊이 + 식히기 + 결정 모양의 바탕 수 를 주소에 담음
 function recipe(){
   const sd=seeds.map(s=>[Math.round(s.x*100),Math.round(s.z*100),Math.round(s.dep/0.2)].join('_')).join('.');
-  return `${crystalSeed.toString(36)}~${Math.round(coolU*100)}~${sd}~${Math.round(meanderU*100)}~${['mix','ㅁ','ㄷ','ㄹ','ㄴ','回','말림','쌍말림'].indexOf(patMode)}`;
+  return `${crystalSeed.toString(36)}~${Math.round(coolU*100)}~${sd}~${Math.round(meanderU*100)}~${['mix','ㅁ','ㄷ','ㄹ','ㄴ','回','말림','쌍말림','다발'].indexOf(patMode)}`;
 }
 $('link').onclick=async()=>{
   if(!seeds.length){ ensureSeeds(); }
@@ -1425,7 +1494,7 @@ function loadRecipe(){
   const c=new URLSearchParams(location.search).get('c'); if(!c) return false;
   try{
     const [sd,cv,list,mv,pv]=c.split('~');
-    const pm=['mix','ㅁ','ㄷ','ㄹ','ㄴ','回','말림','쌍말림'][+pv];
+    const pm=['mix','ㅁ','ㄷ','ㄹ','ㄴ','回','말림','쌍말림','다발'][+pv];
     if(pm){ patMode=pm; document.querySelectorAll('#pats button').forEach(x=>x.classList.toggle('on',x.dataset.p===pm)); }
     if(mv!==undefined) meanderU=clamp((+mv)/100);
     crystalSeed=parseInt(sd,36)||crystalSeed;
